@@ -283,23 +283,13 @@ function createAppCard(appDetails, app) {
     return card;
 }
 
-// Функция скачивания с именем
-function downloadWithName(url, filename) {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-// Основная функция загрузки APK
+// Функция скачивания APK с подсказкой для сохранения с нужным именем
 async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
     if (!container) return;
 
-    // Санитизация имени файла
+    // Санитизация имени файла для отображения
     const sanitizeFileName = (name) => {
         return name
             .replace(/[\\/*?:"<>|]/g, '_')
@@ -332,41 +322,55 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
             const urls = data.body.downloadUrls;
             container.innerHTML = `
                 <div class="space-y-3">
+                    <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
+                        <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
+                        <div class="text-sm text-yellow-700 mt-1">
+                            При клике на ссылку браузер может сохранить файл с именем из URL. 
+                            Чтобы сохранить как <strong>${escapeHtml(suggestedFileName)}</strong>:
+                            <ul class="list-disc list-inside mt-1 space-y-1">
+                                <li>Нажмите правой кнопкой мыши по ссылке и выберите «Сохранить ссылку как…»</li>
+                                <li>В поле «Имя файла» укажите <code class="bg-gray-100 px-1 rounded">${escapeHtml(suggestedFileName)}</code></li>
+                                <li>Используйте команды ниже для загрузки через терминал</li>
+                            </ul>
+                        </div>
+                    </div>
                     <div class="font-semibold">Ссылки для скачивания:</div>
                     ${urls.map((u, idx) => `
                         <div class="p-2 bg-gray-50 rounded break-all">
                             <div class="text-sm text-gray-600 mb-1">Файл ${idx+1}</div>
                             <div class="flex flex-wrap gap-2 items-center">
                                 <a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 underline text-sm">${escapeHtml(u.url)}</a>
-                                <button class="download-file-btn bg-blue-500 text-white px-3 py-1 rounded text-sm" data-url="${escapeHtml(u.url)}" data-filename="${suggestedFileName}">
-                                    Скачать как ${suggestedFileName}
-                                </button>
                             </div>
                         </div>
                     `).join('')}
-                    <div class="mt-4 p-3 bg-green-50 rounded">
-                        <div class="font-semibold">Скачать первым файлом с именем:</div>
-                        <button id="primaryDownloadBtn" class="bg-green-600 text-white px-4 py-2 rounded mt-2" data-url="${escapeHtml(urls[0].url)}" data-filename="${suggestedFileName}">
-                            📥 Скачать ${suggestedFileName}
-                        </button>
+                    <div class="mt-4 p-3 bg-gray-100 rounded">
+                        <div class="font-semibold">Команды для загрузки с правильным именем:</div>
+                        <div class="mt-2">
+                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
+                                curl -L -o "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
+                            </div>
+                            <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
+                        </div>
+                        <div class="mt-2">
+                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
+                                wget -O "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
+                            </div>
+                            <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
+                        </div>
                     </div>
                 </div>
             `;
 
-            const primaryBtn = document.getElementById('primaryDownloadBtn');
-            if (primaryBtn) {
-                primaryBtn.addEventListener('click', () => {
-                    const url = primaryBtn.getAttribute('data-url');
-                    const filename = primaryBtn.getAttribute('data-filename');
-                    downloadWithName(url, filename);
-                });
-            }
-            document.querySelectorAll('.download-file-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const url = btn.getAttribute('data-url');
-                    const filename = btn.getAttribute('data-filename');
-                    downloadWithName(url, filename);
-                });
+            // Копирование команд
+            document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
+                const cmd = `curl -L -o "${suggestedFileName}" "${urls[0].url}"`;
+                await navigator.clipboard.writeText(cmd);
+                alert('Команда curl скопирована');
+            });
+            document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
+                const cmd = `wget -O "${suggestedFileName}" "${urls[0].url}"`;
+                await navigator.clipboard.writeText(cmd);
+                alert('Команда wget скопирована');
             });
         } else {
             container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки</div>';

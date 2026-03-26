@@ -49,11 +49,11 @@
         </div>
 
         <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Search results will be populated here -->
+            <!-- Результаты поиска -->
         </div>
     </div>
 
-    <!-- Footer with GitHub link -->
+    <!-- Footer -->
     <footer class="text-center py-6 mt-8 border-t border-gray-200">
         <a href="https://github.com/ant783/rustore-search" 
            target="_blank" 
@@ -66,7 +66,7 @@
         </a>
     </footer>
 
-    <!-- Download Modal -->
+    <!-- Модальные окна -->
     <div id="downloadModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Окно загрузки">
         <div class="modal-content">
             <button type="button" class="modal-close" aria-label="Закрыть">&times;</button>
@@ -75,7 +75,6 @@
         </div>
     </div>
 
-    <!-- Version History Modal -->
     <div id="versionModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="История версий">
         <div class="modal-content">
             <button type="button" class="modal-close" aria-label="Закрыть">&times;</button>
@@ -84,7 +83,6 @@
         </div>
     </div>
 
-    <!-- Image Preview Modal -->
     <div id="imagePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Просмотр изображений">
         <div class="modal-content">
             <button type="button" class="modal-close imageClose" aria-label="Закрыть">&times;</button>
@@ -105,7 +103,6 @@
         </div>
     </div>
 
-    <!-- Description Modal -->
     <div id="descriptionModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Описание приложения">
         <div class="modal-content">
             <button type="button" class="modal-close" aria-label="Закрыть">&times;</button>
@@ -114,13 +111,15 @@
         </div>
     </div>
 
-    <!-- Comments Modal -->
     <div id="commentsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Отзывы о приложении">
         <div class="modal-content">
             <button type="button" class="modal-close" aria-label="Закрыть">&times;</button>
             <h2 id="appCommentsHeader" class="text-2xl font-bold mb-4"></h2>
             <select id="commentsFilterOption" class="bg-gray-50 border mr-2 mb-4 border-gray-300 text-gray-900 rounded-lg">
-                <option value="" disabled selected>Загрузка фильтров...</option>
+                <option value="NEW_FIRST">Сначала новые</option>
+                <option value="USEFUL_FIRST">Сначала полезные</option>
+                <option value="POSITIVE_FIRST">Сначала положительные</option>
+                <option value="NEGATIVE_FIRST">Сначала отрицательные</option>
             </select>
             <div id="appCommentsBody" class="space-y-4"></div>
         </div>

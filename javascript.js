@@ -1,25 +1,22 @@
 // Android SDK version mapping
 const sdkVersions = {
-    1:  '1.0',   2:  '1.1',   3:  '1.5',   4:  '1.6',   5:  '2.0',  6:  '2.0.1',
-    7:  '2.1',   8:  '2.2',   9:  '2.3',   10: '2.3.3', 11: '3.0',  12: '3.1',
-    13: '3.2',   14: '4.0',   15: '4.0.3', 16: '4.1',   17: '4.2',  18: '4.3',
-    19: '4.4',   20: '4.4W',  21: '5.0',   22: '5.1',   23: '6.0',  24: '7.0',
-    25: '7.1',   26: '8.0',   27: '8.1',   28: '9.0',   29: '10',   30: '11',
-    31: '12',    32: '12.1',  33: '13',    34: '14',    35: '15',   36: '16'
+    1: '1.0', 2: '1.1', 3: '1.5', 4: '1.6', 5: '2.0', 6: '2.0.1',
+    7: '2.1', 8: '2.2', 9: '2.3', 10: '2.3.3', 11: '3.0', 12: '3.1',
+    13: '3.2', 14: '4.0', 15: '4.0.3', 16: '4.1', 17: '4.2', 18: '4.3',
+    19: '4.4', 20: '4.4W', 21: '5.0', 22: '5.1', 23: '6.0', 24: '7.0',
+    25: '7.1', 26: '8.0', 27: '8.1', 28: '9.0', 29: '10', 30: '11',
+    31: '12', 32: '12.1', 33: '13', 34: '14', 35: '15', 36: '16'
 };
 
-// Utility functions
 const getAndroidVersion = sdk => sdkVersions[sdk] ? `Android ${sdkVersions[sdk]}` : `API ${sdk}`;
-
 const formatFileSize = bytes => {
     if (bytes === 0) return '0 Bytes';
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 };
-
 const formatDate = date => new Date(date).toLocaleDateString();
-const roundToDecimal = (num, places = 2) => Math.round(num * 10**places) / 10**places;
+const roundToDecimal = (num, places = 2) => Math.round(num * 10 ** places) / 10 ** places;
 
 const escapeHtml = (value) => {
     if (value == null) return '';
@@ -31,27 +28,14 @@ const escapeHtml = (value) => {
         .replace(/'/g, '&#39;');
 };
 
-const guessAndroidScreenDensity = () => {
-    const dpr = Number(window.devicePixelRatio || 1);
-    let density;
-    if (dpr >= 4) density = 640;
-    else if (dpr >= 3) density = 480;
-    else if (dpr >= 2) density = 320;
-    else if (dpr >= 1.5) density = 240;
-    else density = 160;
-    return Math.max(240, density);
-};
-
 const createRatingStars = rating => {
     const safeRating = typeof rating === 'number' && !isNaN(rating) ? rating : 0;
     const fullStars = Math.floor(safeRating);
     const hasHalfStar = safeRating % 1 >= 0.5;
-    return Array.from({length: 5}, (_, i) => 
-        i < fullStars 
-            ? '<span class="rating-star">★</span>' 
-            : (i === fullStars && hasHalfStar) 
-                ? '<span class="rating-star">⯪</span>' 
-                : '<span class="text-gray-300">★</span>'
+    return Array.from({ length: 5 }, (_, i) =>
+        i < fullStars ? '<span class="rating-star">★</span>' :
+        (i === fullStars && hasHalfStar) ? '<span class="rating-star">⯪</span>' :
+        '<span class="text-gray-300">★</span>'
     ).join('');
 };
 
@@ -92,8 +76,6 @@ const ModalManager = {
 // State
 const state = {
     controller: null,
-    imageIndex: 0,
-    images: [],
     page: 0,
     isLoading: false,
     hasMorePages: true,
@@ -107,59 +89,6 @@ const state = {
 };
 
 // API functions
-async function searchApps(query, isLoadMore = false) {
-    if (!isLoadMore) {
-        state.reset();
-        state.query = query;
-        state.isLoading = false;
-    }
-    if (!query.trim() || state.isLoading || !state.hasMorePages) return;
-
-    const resultsContainer = document.getElementById('searchResults');
-    if (!resultsContainer) return;
-
-    if (!isLoadMore) {
-        resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Поиск...</p></div>';
-    }
-    state.isLoading = true;
-
-    try {
-        const response = await fetch(`https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`, {
-            signal: state.controller.signal
-        });
-        const data = await response.json();
-        if (query !== state.query) return;
-
-        if (data.code === 'OK' && data.body) {
-            const results = data.body.content;
-            if (!isLoadMore) resultsContainer.innerHTML = '';
-            if (!results || results.length === 0) {
-                if (!isLoadMore) resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
-                state.hasMorePages = false;
-                return;
-            }
-            for (const app of results) {
-                if (query !== state.query) return;
-                const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
-                if (appDetails && query === state.query) {
-                    resultsContainer.appendChild(createAppCard(appDetails, app));
-                }
-            }
-            state.hasMorePages = state.page < data.body.totalPages - 1;
-            state.page++;
-        }
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Error searching apps:', error);
-            if (!isLoadMore && query === state.query) {
-                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', 'Проверьте интернет-соединение');
-            }
-        }
-    } finally {
-        if (query === state.query) state.isLoading = false;
-    }
-}
-
 async function fetchAppDetails(packageName, { signal } = {}) {
     try {
         const response = await fetch(`https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`, { signal });
@@ -195,6 +124,72 @@ function extractPackageNameFromUrl(url) {
     }
 }
 
+// Поиск приложений (основной функционал)
+async function searchApps(query, isLoadMore = false) {
+    if (!isLoadMore) {
+        state.reset();
+        state.query = query;
+        state.isLoading = false;
+    }
+
+    if (!query.trim() || state.isLoading || !state.hasMorePages) return;
+
+    const resultsContainer = document.getElementById('searchResults');
+    if (!resultsContainer) return;
+
+    if (!isLoadMore) {
+        resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Поиск...</p></div>';
+    }
+
+    state.isLoading = true;
+
+    try {
+        const response = await fetch(
+            `https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`,
+            { signal: state.controller.signal }
+        );
+        const data = await response.json();
+
+        if (query !== state.query) return;
+
+        if (data.code === 'OK' && data.body) {
+            const results = data.body.content;
+            if (!isLoadMore) resultsContainer.innerHTML = '';
+
+            if (!results || results.length === 0) {
+                if (!isLoadMore) {
+                    resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
+                }
+                state.hasMorePages = false;
+                return;
+            }
+
+            for (const app of results) {
+                if (query !== state.query) return;
+                const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
+                if (appDetails && query === state.query) {
+                    resultsContainer.appendChild(createAppCard(appDetails, app));
+                }
+            }
+
+            state.hasMorePages = state.page < data.body.totalPages - 1;
+            state.page++;
+        } else {
+            throw new Error('API вернул ошибку');
+        }
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error searching apps:', error);
+            if (!isLoadMore && query === state.query) {
+                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', 'Проверьте интернет-соединение');
+            }
+        }
+    } finally {
+        if (query === state.query) state.isLoading = false;
+    }
+}
+
+// Создание карточки приложения
 function createAppCard(appDetails, app) {
     const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
     const iconUrl = escapeHtml(appDetails.iconUrl || '');
@@ -208,7 +203,7 @@ function createAppCard(appDetails, app) {
     const versionName = escapeHtml(appDetails.versionName || '');
     const downloads = (appDetails.downloads || 0).toLocaleString();
     const updated = formatDate(appDetails.appVerUpdatedAt);
-    const added = appDetails.appVerUpdatedAt > appDetails.firstPublishedAt 
+    const added = appDetails.appVerUpdatedAt > appDetails.firstPublishedAt
         ? formatDate(appDetails.firstPublishedAt)
         : formatDate(appDetails.appVerUpdatedAt);
     const rating = app.averageUserRating || 0;
@@ -261,6 +256,7 @@ function createAppCard(appDetails, app) {
         </div>
     `;
 
+    // Привязка событий
     card.querySelector('.comments-toggle')?.addEventListener('click', (e) => {
         const pkg = e.currentTarget.getAttribute('data-package');
         showComments(pkg, 0, true);
@@ -283,8 +279,9 @@ function createAppCard(appDetails, app) {
     return card;
 }
 
+// Функции для модальных окон (упрощённые, но рабочие)
 async function showVersionHistory(appId) {
-    ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4"><p class="text-gray-600">Загрузка истории версий...</p></div>');
+    ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4">Загрузка...</div>');
     try {
         const response = await fetch(`https://backapi.rustore.ru/applicationData/allAppVersionWhatsNew/${appId}`);
         const data = await response.json();
@@ -301,11 +298,11 @@ async function showVersionHistory(appId) {
                         </div>
                     `).join('');
                 } else {
-                    container.innerHTML = '<div class="text-center p-4"><p class="text-gray-600">Нет данных об истории версий</p></div>';
+                    container.innerHTML = '<div class="text-center p-4">Нет данных</div>';
                 }
             }
         } else {
-            ModalManager.showError('versionHistory', 'Ошибка', 'Не удалось загрузить историю версий');
+            ModalManager.showError('versionHistory', 'Ошибка', 'Не удалось загрузить историю');
         }
     } catch (error) {
         ModalManager.showError('versionHistory', 'Ошибка', 'Проверьте соединение');
@@ -313,14 +310,13 @@ async function showVersionHistory(appId) {
 }
 
 async function downloadApp(appId, sdkVersion, options = {}) {
-    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4"><p class="text-gray-600">Получение ссылки...</p></div>');
+    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
+    const container = document.getElementById('downloadResults');
+    if (!container) return;
 
-    const openDownload = (url) => {
-        const w = window.open(url, '_blank', 'noopener,noreferrer');
-        if (!w) window.location.href = url;
-    };
-
-    const requestDownloadLink = async (withoutSplits, screenDensity) => {
+    // Простой вывод ссылки (для демонстрации)
+    try {
+        const density = options.screenDensity || 320;
         const response = await fetch('https://backapi.rustore.ru/applicationData/v2/download-link', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -328,127 +324,28 @@ async function downloadApp(appId, sdkVersion, options = {}) {
                 appId,
                 firstInstall: true,
                 mobileServices: [],
-                supportedAbis: ['x86_64', 'arm64-v8a', 'x86', 'armeabi-v7a', 'armeabi'],
-                screenDensity,
+                supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
+                screenDensity: density,
                 supportedLocales: ['ru_RU'],
                 sdkVersion,
-                withoutSplits,
+                withoutSplits: false,
                 signatureFingerprint: null
             })
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-    };
-
-    const renderDownloadLinks = (data, { screenDensity, withoutSplitsUsed }) => {
-        const container = document.getElementById('downloadResults');
-        if (!container) return;
-        const urls = data?.body?.downloadUrls || [];
-        const allLinks = urls.map(u => u.url).filter(Boolean);
-        const firstLink = allLinks[0];
-        const isSplitSet = allLinks.length > 1;
-
-        // Build plan for scripts
-        const buildPlan = () => {
-            const versionCode = data?.body?.versionCode ?? 'unknown';
-            const items = urls.map((u, idx) => ({ idx, url: u?.url, size: u?.size, hash: u?.hash })).filter(i => i.url);
-            const sorted = [...items].sort((a, b) => (b.size || 0) - (a.size || 0));
-            const baseIdx = sorted[0]?.idx;
-            let configCounter = 1;
-            return items.map(i => {
-                const safeHash = (i.hash || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
-                const filename = i.idx === baseIdx
-                    ? `rustore_${appId}_${versionCode}_base${safeHash ? '_' + safeHash : ''}.apk`
-                    : `rustore_${appId}_${versionCode}_config${configCounter++}${safeHash ? '_' + safeHash : ''}.apk`;
-                return { ...i, filename };
-            });
-        };
-        const plan = buildPlan();
-
-        container.innerHTML = `
-            <div class="space-y-3">
-                <div class="p-3 bg-gray-50 rounded-lg">
-                    <div class="text-sm"><strong>Использовано:</strong> screenDensity=${screenDensity}, withoutSplits=${withoutSplitsUsed}</div>
-                    ${isSplitSet ? '<div class="mt-1 text-sm">⚠️ Split APK – нужно скачать все файлы.</div>' : ''}
-                    <div class="mt-2">
-                        <select id="screenDensitySelect" class="border rounded px-2 py-1">
-                            ${[160,240,320,480,640,0].map(d => `<option value="${d}" ${d===screenDensity?'selected':''}>${d===0?'0 (авто)':d}</option>`).join('')}
-                        </select>
-                        <button id="retryDownload" class="ml-2 bg-blue-500 text-white px-3 py-1 rounded">Повторить</button>
-                    </div>
+        const data = await response.json();
+        if (data.code === 'OK' && data.body?.downloadUrls?.length) {
+            const urls = data.body.downloadUrls;
+            container.innerHTML = `
+                <div class="space-y-3">
+                    <div class="font-semibold">Ссылки для скачивания:</div>
+                    ${urls.map(u => `<div><a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 break-all">${escapeHtml(u.url)}</a></div>`).join('')}
                 </div>
-                <div class="text-sm">
-                    <div><strong>App ID:</strong> ${escapeHtml(data?.body?.appId)}</div>
-                    <div><strong>Version Code:</strong> ${escapeHtml(data?.body?.versionCode)}</div>
-                </div>
-                ${firstLink ? `
-                <div class="p-3 bg-green-50 rounded-lg">
-                    <div class="font-semibold">Прямая ссылка</div>
-                    <a href="${escapeHtml(firstLink)}" target="_blank" class="text-blue-600 break-all">${escapeHtml(firstLink)}</a>
-                    <div class="mt-2 flex gap-2 flex-wrap">
-                        <button id="startPrimaryDownload" class="bg-blue-600 text-white px-3 py-1 rounded">Скачать</button>
-                        <button id="copyDownloadLinks" class="border px-3 py-1 rounded">Копировать ссылки</button>
-                        <button id="copyPwshScript" class="border px-3 py-1 rounded">PowerShell</button>
-                        <button id="copyCurlCommands" class="border px-3 py-1 rounded">curl</button>
-                        ${isSplitSet ? '<button id="copyAdbInstall" class="border px-3 py-1 rounded">adb команда</button>' : ''}
-                    </div>
-                </div>
-                ` : ''}
-                ${urls.length ? `
-                <div class="border-t pt-3">
-                    <div class="font-semibold mb-2">Файлы</div>
-                    ${urls.map((u, idx) => `<div class="p-2 bg-gray-50 rounded mb-2 break-all"><a href="${escapeHtml(u.url)}" target="_blank">${escapeHtml(u.url)}</a><button class="download-file ml-2 text-sm" data-url="${escapeHtml(u.url)}">📥</button></div>`).join('')}
-                </div>
-                ` : ''}
-                <details class="text-xs"><summary>JSON</summary><pre class="bg-gray-900 text-gray-100 p-2 rounded overflow-auto">${escapeHtml(JSON.stringify(data, null, 2))}</pre></details>
-            </div>
-        `;
-
-        // Event handlers
-        document.getElementById('startPrimaryDownload')?.addEventListener('click', () => openDownload(firstLink));
-        document.querySelectorAll('.download-file').forEach(btn => {
-            btn.addEventListener('click', () => openDownload(btn.dataset.url));
-        });
-        document.getElementById('copyDownloadLinks')?.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(allLinks.join('\n'));
-            alert('Ссылки скопированы');
-        });
-        document.getElementById('copyPwshScript')?.addEventListener('click', async () => {
-            const lines = plan.map(p => `Invoke-WebRequest -Uri '${p.url.replace(/'/g, "''")}' -OutFile "downloads/${p.filename}"`);
-            await navigator.clipboard.writeText(lines.join('\n'));
-            alert('PowerShell скрипт скопирован');
-        });
-        document.getElementById('copyCurlCommands')?.addEventListener('click', async () => {
-            const lines = plan.map(p => `curl -L "${p.url.replace(/"/g, '\\"')}" -o "downloads/${p.filename}"`);
-            await navigator.clipboard.writeText(lines.join('\n'));
-            alert('curl команды скопированы');
-        });
-        document.getElementById('copyAdbInstall')?.addEventListener('click', async () => {
-            await navigator.clipboard.writeText('adb install-multiple downloads/*.apk');
-            alert('adb команда скопирована');
-        });
-        document.getElementById('retryDownload')?.addEventListener('click', () => {
-            const density = parseInt(document.getElementById('screenDensitySelect').value);
-            downloadApp(appId, sdkVersion, { screenDensity: density });
-        });
-    };
-
-    try {
-        const requestedDensity = options.screenDensity ?? guessAndroidScreenDensity();
-        const densities = [...new Set([requestedDensity, 480, 320, 240, 160, 0])];
-        for (const density of densities) {
-            for (const withoutSplits of [false, true]) {
-                const data = await requestDownloadLink(withoutSplits, density);
-                if (data?.code !== 'OK') throw new Error(data?.message);
-                if (data?.body?.downloadUrls?.length) {
-                    renderDownloadLinks(data, { screenDensity: density, withoutSplitsUsed: withoutSplits });
-                    return;
-                }
-            }
+            `;
+        } else {
+            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки</div>';
         }
-        ModalManager.showError('downloadResults', 'Нет ссылок', 'Попробуйте другую плотность экрана');
     } catch (error) {
-        ModalManager.showError('downloadResults', 'Ошибка', error.message);
+        container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
     }
 }
 
@@ -471,19 +368,12 @@ async function showComments(packageName, pageNumber, firstOpen) {
 
     if (firstOpen) {
         header.innerHTML = 'Отзывы о приложении';
-        filterSelect.innerHTML = `
-            <option value="NEW_FIRST">Сначала новые</option>
-            <option value="USEFUL_FIRST">Сначала полезные</option>
-            <option value="POSITIVE_FIRST">Сначала положительные</option>
-            <option value="NEGATIVE_FIRST">Сначала отрицательные</option>
-        `;
-        filterSelect.value = 'NEW_FIRST';
         filterSelect.classList.remove('hidden');
         ModalManager.show('commentsModal');
+        modal.dataset.packageName = packageName;
         modal.dataset.pageCount = '0';
         modal.dataset.allCommentsLoaded = 'false';
         modal.dataset.canLoad = 'true';
-        modal.dataset.packageName = packageName;
     }
 
     if (pageNumber === 0) body.innerHTML = '<div class="text-center p-4">Загрузка отзывов...</div>';
@@ -517,7 +407,7 @@ async function showComments(packageName, pageNumber, firstOpen) {
     }
 }
 
-// Image preview
+// Предпросмотр изображений
 function openPreview(imageUrl, event) {
     const modal = document.getElementById('imagePreviewModal');
     const card = event.target.closest('.app-card');
@@ -537,7 +427,7 @@ function updateNavButtons() {
     const prog = document.getElementById('imageProgress');
     if (prev) prev.style.display = state.imageIndex > 0 ? 'block' : 'none';
     if (next) next.style.display = state.imageIndex < state.images.length - 1 ? 'block' : 'none';
-    if (prog) prog.textContent = `${state.imageIndex+1} / ${state.images.length}`;
+    if (prog) prog.textContent = `${state.imageIndex + 1} / ${state.images.length}`;
 }
 
 function navigateImage(dir) {
@@ -555,7 +445,7 @@ function closeImagePreview() {
     state.imageIndex = 0;
 }
 
-// Search by URL
+// Поиск по ссылке
 async function searchByUrl() {
     const urlInput = document.getElementById('urlInput');
     const url = urlInput.value.trim();
@@ -586,7 +476,7 @@ async function searchByUrl() {
     }
 }
 
-// DOM ready
+// Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');
@@ -614,7 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
-    // Modal close buttons
+    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -639,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Infinite scroll
+    // Бесконечная прокрутка
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

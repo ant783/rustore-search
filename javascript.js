@@ -80,6 +80,8 @@ const state = {
     isLoading: false,
     hasMorePages: true,
     query: '',
+    images: [],
+    imageIndex: 0,
     reset() {
         if (this.controller) this.controller.abort();
         this.controller = new AbortController();
@@ -124,7 +126,7 @@ function extractPackageNameFromUrl(url) {
     }
 }
 
-// Поиск приложений (основной функционал)
+// Поиск приложений
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -251,7 +253,7 @@ function createAppCard(appDetails, app) {
             <div>Added: ${added}</div>
         </div>
         <div class="mt-4 flex justify-between items-center">
-            <button class="download-btn" data-appid="${appDetails.appId}" data-sdk="${appDetails.minSdkVersion}">Скачать</button>
+            <button class="download-btn" data-appid="${appDetails.appId}" data-sdk="${appDetails.minSdkVersion}" data-appname="${appName}" data-versionname="${versionName}">Скачать</button>
             <span class="version-history-btn" data-appid="${appDetails.appId}">История версий</span>
         </div>
     `;
@@ -269,7 +271,9 @@ function createAppCard(appDetails, app) {
     card.querySelector('.download-btn')?.addEventListener('click', (e) => {
         const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
         const sdk = parseInt(e.currentTarget.getAttribute('data-sdk'));
-        downloadApp(appId, sdk);
+        const appName = e.currentTarget.getAttribute('data-appname');
+        const versionName = e.currentTarget.getAttribute('data-versionname');
+        downloadApp(appId, sdk, appName, versionName);
     });
     card.querySelector('.version-history-btn')?.addEventListener('click', (e) => {
         const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
@@ -279,7 +283,100 @@ function createAppCard(appDetails, app) {
     return card;
 }
 
-// Функции для модальных окон (упрощённые, но рабочие)
+// Функция скачивания с именем
+function downloadWithName(url, filename) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Основная функция загрузки APK
+async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
+    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
+    const container = document.getElementById('downloadResults');
+    if (!container) return;
+
+    // Санитизация имени файла
+    const sanitizeFileName = (name) => {
+        return name
+            .replace(/[\\/*?:"<>|]/g, '_')
+            .replace(/\s+/g, '_')
+            .trim();
+    };
+    const safeAppName = sanitizeFileName(appName || 'app');
+    const safeVersion = sanitizeFileName(versionName || 'unknown');
+    const suggestedFileName = `${safeAppName}_${safeVersion}.apk`;
+
+    try {
+        const density = options.screenDensity || 320;
+        const response = await fetch('https://backapi.rustore.ru/applicationData/v2/download-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                appId,
+                firstInstall: true,
+                mobileServices: [],
+                supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
+                screenDensity: density,
+                supportedLocales: ['ru_RU'],
+                sdkVersion,
+                withoutSplits: false,
+                signatureFingerprint: null
+            })
+        });
+        const data = await response.json();
+        if (data.code === 'OK' && data.body?.downloadUrls?.length) {
+            const urls = data.body.downloadUrls;
+            container.innerHTML = `
+                <div class="space-y-3">
+                    <div class="font-semibold">Ссылки для скачивания:</div>
+                    ${urls.map((u, idx) => `
+                        <div class="p-2 bg-gray-50 rounded break-all">
+                            <div class="text-sm text-gray-600 mb-1">Файл ${idx+1}</div>
+                            <div class="flex flex-wrap gap-2 items-center">
+                                <a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 underline text-sm">${escapeHtml(u.url)}</a>
+                                <button class="download-file-btn bg-blue-500 text-white px-3 py-1 rounded text-sm" data-url="${escapeHtml(u.url)}" data-filename="${suggestedFileName}">
+                                    Скачать как ${suggestedFileName}
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                    <div class="mt-4 p-3 bg-green-50 rounded">
+                        <div class="font-semibold">Скачать первым файлом с именем:</div>
+                        <button id="primaryDownloadBtn" class="bg-green-600 text-white px-4 py-2 rounded mt-2" data-url="${escapeHtml(urls[0].url)}" data-filename="${suggestedFileName}">
+                            📥 Скачать ${suggestedFileName}
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const primaryBtn = document.getElementById('primaryDownloadBtn');
+            if (primaryBtn) {
+                primaryBtn.addEventListener('click', () => {
+                    const url = primaryBtn.getAttribute('data-url');
+                    const filename = primaryBtn.getAttribute('data-filename');
+                    downloadWithName(url, filename);
+                });
+            }
+            document.querySelectorAll('.download-file-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const url = btn.getAttribute('data-url');
+                    const filename = btn.getAttribute('data-filename');
+                    downloadWithName(url, filename);
+                });
+            });
+        } else {
+            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки</div>';
+        }
+    } catch (error) {
+        container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
+    }
+}
+
+// История версий
 async function showVersionHistory(appId) {
     ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4">Загрузка...</div>');
     try {
@@ -306,46 +403,6 @@ async function showVersionHistory(appId) {
         }
     } catch (error) {
         ModalManager.showError('versionHistory', 'Ошибка', 'Проверьте соединение');
-    }
-}
-
-async function downloadApp(appId, sdkVersion, options = {}) {
-    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
-    const container = document.getElementById('downloadResults');
-    if (!container) return;
-
-    // Простой вывод ссылки (для демонстрации)
-    try {
-        const density = options.screenDensity || 320;
-        const response = await fetch('https://backapi.rustore.ru/applicationData/v2/download-link', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                appId,
-                firstInstall: true,
-                mobileServices: [],
-                supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
-                screenDensity: density,
-                supportedLocales: ['ru_RU'],
-                sdkVersion,
-                withoutSplits: false,
-                signatureFingerprint: null
-            })
-        });
-        const data = await response.json();
-        if (data.code === 'OK' && data.body?.downloadUrls?.length) {
-            const urls = data.body.downloadUrls;
-            container.innerHTML = `
-                <div class="space-y-3">
-                    <div class="font-semibold">Ссылки для скачивания:</div>
-                    ${urls.map(u => `<div><a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 break-all">${escapeHtml(u.url)}</a></div>`).join('')}
-                </div>
-            `;
-        } else {
-            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки</div>';
-        }
-    } catch (error) {
-        container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
     }
 }
 
@@ -476,7 +533,7 @@ async function searchByUrl() {
     }
 }
 
-// Инициализация при загрузке страницы
+// Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');

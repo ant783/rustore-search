@@ -4,7 +4,7 @@
 //  При первом использовании может потребоваться временное
 //  разрешение — перейдите по ссылке и нажмите "Request access".
 // ============================================================
-const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
+const CORS_PROXY = 'https://robwu.nl/cors-anywhere.html';
 
 // Android SDK version mapping
 const sdkVersions = {

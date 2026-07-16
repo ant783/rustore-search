@@ -1,10 +1,3 @@
-// ============================================================
-//  Прокси-сервер для обхода CORS (cors-anywhere)
-//  При первом использовании перейдите по ссылке:
-//  https://cors-anywhere.herokuapp.com/ и нажмите "Request access"
-// ============================================================
-const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
-
 // Android SDK version mapping
 const sdkVersions = {
     1: '1.0', 2: '1.1', 3: '1.5', 4: '1.6', 5: '2.0', 6: '2.0.1',

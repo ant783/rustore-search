@@ -1,3 +1,7 @@
+// ============================================================
+//  RuStore через парсинг HTML (без прокси)
+//  Требуется отключение CORS в браузере (расширение или флаг)
+// ============================================================
 
 // ---- Таймауты ----
 const TIMEOUT_SEARCH = 15000;
@@ -13,6 +17,7 @@ const escapeHtml = (value) => {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 };
+
 const createRatingStars = rating => {
     const safeRating = typeof rating === 'number' && !isNaN(rating) ? rating : 0;
     const fullStars = Math.floor(safeRating);
@@ -23,6 +28,7 @@ const createRatingStars = rating => {
         '<span class="text-gray-300">★</span>'
     ).join('');
 };
+
 const formatDate = date => new Date(date).toLocaleDateString();
 const formatFileSize = bytes => {
     if (bytes === 0) return '0 Bytes';
@@ -31,22 +37,65 @@ const formatFileSize = bytes => {
     return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 };
 
-// Modal Manager (без изменений)
-const ModalManager = { /* ... (как в предыдущих версиях) */ };
+// ---- Modal Manager ----
+const ModalManager = {
+    show(modalId, contentId, content) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+        if (contentId) {
+            const contentEl = document.getElementById(contentId);
+            if (contentEl) contentEl.innerHTML = content;
+        }
+        modal.classList.remove('hidden');
+        modal.classList.add('show');
+    },
+    hide(modalId, contentId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+        modal.classList.add('hidden');
+        modal.classList.remove('show');
+        if (contentId) {
+            const contentEl = document.getElementById(contentId);
+            if (contentEl) contentEl.innerHTML = '';
+        }
+    },
+    showError(containerId, title, message) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = `
+            <div class="col-span-full text-center p-4 bg-red-50 rounded-lg">
+                <p class="text-red-600 font-medium">${escapeHtml(title)}</p>
+                <p class="text-red-500 text-sm mt-2">${escapeHtml(message)}</p>
+            </div>
+        `;
+    }
+};
 
-// State (без изменений)
-const state = { /* ... */ };
+// ---- State ----
+const state = {
+    controller: null,
+    page: 0,
+    isLoading: false,
+    hasMorePages: true,
+    query: '',
+    reset() {
+        if (this.controller) this.controller.abort();
+        this.controller = new AbortController();
+        this.page = 0;
+        this.hasMorePages = true;
+    }
+};
 
-// ---- Универсальный fetch с прокси и таймаутом ----
+// ---- Универсальный fetch с таймаутом ----
 async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-        const response = await fetch(CORS_PROXY + url, {
+        const response = await fetch(url, {
             ...options,
             signal: controller.signal,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 ...(options.headers || {})
             }
@@ -59,7 +108,9 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Поиск на RuStore (парсинг страницы поиска) ----
+// ============================================================
+//  ПОИСК (парсинг страницы поиска RuStore)
+// ============================================================
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -87,12 +138,13 @@ async function searchApps(query, isLoadMore = false) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // Ищем карточки приложений (селекторы по состоянию на 2026 год)
-        const cards = doc.querySelectorAll('.SearchResult_item__...'); // нужно уточнить
-        // Временно используем общий селектор
-        const items = doc.querySelectorAll('[data-testid="search-result-item"]') || 
-                      doc.querySelectorAll('.catalog-item') ||
-                      doc.querySelectorAll('.app-card');
+        // Пытаемся найти карточки приложений (актуальные селекторы на 2026 год)
+        // Проверьте вручную на странице поиска, какие классы используются.
+        let items = doc.querySelectorAll('[data-testid="search-result-item"]');
+        if (!items.length) items = doc.querySelectorAll('.SearchResult_item');
+        if (!items.length) items = doc.querySelectorAll('.catalog-item');
+        if (!items.length) items = doc.querySelectorAll('.app-card');
+        if (!items.length) items = doc.querySelectorAll('.product-card');
 
         if (!items.length) {
             if (!isLoadMore) {
@@ -107,7 +159,7 @@ async function searchApps(query, isLoadMore = false) {
         for (const item of items) {
             if (query !== state.query) return;
 
-            // Извлекаем ссылку на страницу приложения
+            // Ссылка на страницу приложения
             const link = item.querySelector('a[href*="/app/"]');
             if (!link) continue;
             const appUrl = 'https://www.rustore.ru' + link.getAttribute('href');
@@ -120,7 +172,7 @@ async function searchApps(query, isLoadMore = false) {
             const iconEl = item.querySelector('img[src*="icon"]') || item.querySelector('img');
             const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
 
-            // Рейтинг (может быть)
+            // Рейтинг
             const ratingEl = item.querySelector('.rating-value') || item.querySelector('.stars');
             let rating = 0;
             if (ratingEl) {
@@ -128,7 +180,7 @@ async function searchApps(query, isLoadMore = false) {
                 if (match) rating = parseFloat(match[0]);
             }
 
-            // Описание (краткое)
+            // Краткое описание
             const descEl = item.querySelector('.description') || item.querySelector('.short-description');
             const shortDesc = descEl ? descEl.textContent.trim() : '';
 
@@ -152,8 +204,7 @@ async function searchApps(query, isLoadMore = false) {
         if (error.name !== 'AbortError') {
             console.error(error);
             if (!isLoadMore && query === state.query) {
-                let msg = 'Проверьте интернет-соединение и включите расширение CORS.';
-                if (error.message.includes('403')) msg = 'Требуется получить доступ к прокси. Перейдите по ссылке https://cors-anywhere.herokuapp.com/ и нажмите "Request access".';
+                let msg = 'Проверьте интернет-соединение и отключите CORS (расширение или флаг браузера).';
                 ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', msg);
             }
         }
@@ -162,7 +213,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки (аналогично предыдущему) ----
+// ---- Создание карточки приложения ----
 function createAppCard(appData) {
     const { appName, iconUrl, shortDescription, appUrl, rating, packageName } = appData;
     const ratingStars = createRatingStars(rating);
@@ -200,7 +251,9 @@ function createAppCard(appData) {
     return card;
 }
 
-// ---- Скачивание APK (парсинг страницы приложения) ----
+// ============================================================
+//  СКАЧИВАНИЕ APK (парсинг страницы приложения)
+// ============================================================
 async function downloadApp(appUrl, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
@@ -214,10 +267,9 @@ async function downloadApp(appUrl, appName) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // Ищем ссылку на APK – часто в атрибуте data-url у кнопки "Скачать"
         let downloadLink = null;
 
-        // 1. Кнопка с data-url (RuStore часто так делает)
+        // 1. Ищем кнопку или ссылку с data-url или href на .apk
         const btn = doc.querySelector('[data-url*=".apk"]') || 
                     doc.querySelector('a[href*=".apk"]') ||
                     doc.querySelector('.download-button[data-url]');
@@ -225,7 +277,7 @@ async function downloadApp(appUrl, appName) {
             downloadLink = btn.getAttribute('data-url') || btn.getAttribute('href');
         }
 
-        // 2. Ищем JSON-данные в скриптах (например, window.__INITIAL_STATE__)
+        // 2. Ищем в JSON-данных внутри скриптов
         if (!downloadLink) {
             const scripts = doc.querySelectorAll('script');
             for (const script of scripts) {
@@ -239,7 +291,12 @@ async function downloadApp(appUrl, appName) {
             }
         }
 
-        // 3. Если ссылка относительная – добавляем домен
+        // 3. Мета-теги (редко, но возможно)
+        if (!downloadLink) {
+            const meta = doc.querySelector('meta[property="og:video"]');
+            if (meta) downloadLink = meta.getAttribute('content');
+        }
+
         if (downloadLink && downloadLink.startsWith('/')) {
             downloadLink = 'https://www.rustore.ru' + downloadLink;
         }
@@ -266,13 +323,13 @@ async function downloadApp(appUrl, appName) {
                 <div class="mt-4 p-3 bg-gray-100 rounded">
                     <div class="font-semibold">Команды для загрузки:</div>
                     <div class="mt-2">
-                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded">
+                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
                             curl -L -o "${suggestedFileName}" "${escapeHtml(downloadLink)}"
                         </div>
                         <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
                     </div>
                     <div class="mt-2">
-                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded">
+                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
                             wget -O "${suggestedFileName}" "${escapeHtml(downloadLink)}"
                         </div>
                         <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
@@ -283,11 +340,11 @@ async function downloadApp(appUrl, appName) {
 
         document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
             await navigator.clipboard.writeText(`curl -L -o "${suggestedFileName}" "${downloadLink}"`);
-            alert('Команда скопирована');
+            alert('Команда curl скопирована');
         });
         document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
             await navigator.clipboard.writeText(`wget -O "${suggestedFileName}" "${downloadLink}"`);
-            alert('Команда скопирована');
+            alert('Команда wget скопирована');
         });
 
     } catch (error) {
@@ -298,12 +355,66 @@ async function downloadApp(appUrl, appName) {
 // ---- Заглушки для неиспользуемых функций ----
 function showDescription(appName, description) { alert('Описание доступно на странице RuStore.'); }
 async function showComments(packageName, pageNumber, firstOpen) { alert('Отзывы доступны на странице RuStore.'); }
-function searchByUrl() { /* можно реализовать */ }
+function searchByUrl() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (url) window.open(url, '_blank');
+}
 function openPreview(imageUrl, event) {}
 function closeImagePreview() {}
 function navigateImage(dir) {}
 
-// ---- Инициализация (такая же, как раньше) ----
+// ---- Инициализация ----
 document.addEventListener('DOMContentLoaded', () => {
-    // ... (код инициализации из предыдущих версий)
+    const searchInput = document.getElementById('searchInput');
+    const clearSearch = document.getElementById('clearSearch');
+    const urlInput = document.getElementById('urlInput');
+    const clearUrl = document.getElementById('clearUrlSearch');
+    const searchUrlBtn = document.getElementById('searchByUrlBtn');
+
+    let timeout;
+    searchInput?.addEventListener('input', e => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => searchApps(e.target.value), 500);
+        clearSearch.classList.toggle('hidden', !e.target.value);
+    });
+    clearSearch?.addEventListener('click', () => {
+        searchInput.value = '';
+        clearSearch.classList.add('hidden');
+        document.getElementById('searchResults').innerHTML = '';
+        state.reset();
+        state.query = '';
+    });
+    urlInput?.addEventListener('input', () => clearUrl.classList.toggle('hidden', !urlInput.value));
+    clearUrl?.addEventListener('click', () => {
+        urlInput.value = '';
+        clearUrl.classList.add('hidden');
+    });
+    searchUrlBtn?.addEventListener('click', searchByUrl);
+
+    // Закрытие модальных окон
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const modal = btn.closest('.modal');
+            if (modal?.id === 'imagePreviewModal') closeImagePreview();
+            else ModalManager.hide(modal?.id, modal?.querySelector('[id]')?.id);
+        });
+    });
+    document.addEventListener('keydown', e => {
+        const modal = document.getElementById('imagePreviewModal');
+        if (modal?.classList.contains('show') && e.key === 'Escape') closeImagePreview();
+    });
+    window.onclick = e => {
+        if (e.target.classList?.contains('modal')) {
+            if (e.target.id === 'imagePreviewModal') closeImagePreview();
+            else ModalManager.hide(e.target.id, e.target.querySelector('[id]')?.id);
+        }
+    };
+
+    // Бесконечный скролл
+    window.addEventListener('scroll', () => {
+        if (state.isLoading || !state.hasMorePages) return;
+        if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {
+            searchApps(state.query, true);
+        }
+    });
 });

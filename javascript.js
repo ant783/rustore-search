@@ -3,7 +3,6 @@
 //  Требуется отключение CORS в браузере (расширение или флаг)
 // ============================================================
 
-// ---- Таймауты ----
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;
 
@@ -27,14 +26,6 @@ const createRatingStars = rating => {
         (i === fullStars && hasHalfStar) ? '<span class="rating-star">⯪</span>' :
         '<span class="text-gray-300">★</span>'
     ).join('');
-};
-
-const formatDate = date => new Date(date).toLocaleDateString();
-const formatFileSize = bytes => {
-    if (bytes === 0) return '0 Bytes';
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 };
 
 // ---- Modal Manager ----
@@ -139,7 +130,6 @@ async function searchApps(query, isLoadMore = false) {
         const doc = parser.parseFromString(html, 'text/html');
 
         // Пытаемся найти карточки приложений (актуальные селекторы на 2026 год)
-        // Проверьте вручную на странице поиска, какие классы используются.
         let items = doc.querySelectorAll('[data-testid="search-result-item"]');
         if (!items.length) items = doc.querySelectorAll('.SearchResult_item');
         if (!items.length) items = doc.querySelectorAll('.catalog-item');
@@ -159,20 +149,16 @@ async function searchApps(query, isLoadMore = false) {
         for (const item of items) {
             if (query !== state.query) return;
 
-            // Ссылка на страницу приложения
             const link = item.querySelector('a[href*="/app/"]');
             if (!link) continue;
             const appUrl = 'https://www.rustore.ru' + link.getAttribute('href');
 
-            // Название
             const nameEl = item.querySelector('.app-name') || item.querySelector('h3') || item.querySelector('.title');
             const appName = nameEl ? nameEl.textContent.trim() : 'Unknown';
 
-            // Иконка
             const iconEl = item.querySelector('img[src*="icon"]') || item.querySelector('img');
             const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
 
-            // Рейтинг
             const ratingEl = item.querySelector('.rating-value') || item.querySelector('.stars');
             let rating = 0;
             if (ratingEl) {
@@ -180,7 +166,6 @@ async function searchApps(query, isLoadMore = false) {
                 if (match) rating = parseFloat(match[0]);
             }
 
-            // Краткое описание
             const descEl = item.querySelector('.description') || item.querySelector('.short-description');
             const shortDesc = descEl ? descEl.textContent.trim() : '';
 
@@ -195,7 +180,6 @@ async function searchApps(query, isLoadMore = false) {
             resultsContainer.appendChild(createAppCard(appData));
         }
 
-        // Проверяем наличие следующей страницы
         const nextBtn = doc.querySelector('a[rel="next"]') || doc.querySelector('.pagination-next:not(.disabled)');
         state.hasMorePages = !!nextBtn;
         state.page++;
@@ -213,7 +197,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки приложения ----
+// ---- Создание карточки ----
 function createAppCard(appData) {
     const { appName, iconUrl, shortDescription, appUrl, rating, packageName } = appData;
     const ratingStars = createRatingStars(rating);
@@ -291,7 +275,7 @@ async function downloadApp(appUrl, appName) {
             }
         }
 
-        // 3. Мета-теги (редко, но возможно)
+        // 3. Мета-теги (редко)
         if (!downloadLink) {
             const meta = doc.querySelector('meta[property="og:video"]');
             if (meta) downloadLink = meta.getAttribute('content');
@@ -391,7 +375,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
-    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -410,7 +393,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Бесконечный скролл
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

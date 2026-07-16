@@ -1,10 +1,9 @@
 // ============================================================
-//  Добавлен прокси-сервер для обхода CORS
-//  Используется публичный экземпляр cors-anywhere.
-//  При первом использовании может потребоваться временное
-//  разрешение — перейдите по ссылке и нажмите "Request access".
+//  Прокси-сервер для обхода CORS (cors-anywhere)
+//  При первом использовании перейдите по ссылке:
+//  https://cors-anywhere.herokuapp.com/ и нажмите "Request access"
 // ============================================================
-const CORS_PROXY = 'https://corsproxy.io/?';
+const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
 // Android SDK version mapping
 const sdkVersions = {
@@ -98,29 +97,57 @@ const state = {
     }
 };
 
-// API functions (все запросы идут через CORS_PROXY)
+// ============================================================
+//  Универсальная функция для запросов через прокси с обработкой ошибок
+// ============================================================
+async function fetchWithProxy(url, options = {}) {
+    const proxyUrl = CORS_PROXY + url;
+    const response = await fetch(proxyUrl, options);
+    
+    // Если статус 403 – вероятно, нужно запросить доступ у cors-anywhere
+    if (response.status === 403) {
+        throw new Error('Для работы с прокси-сервером необходимо получить временный доступ. Перейдите по ссылке https://cors-anywhere.herokuapp.com/ и нажмите "Request temporary access".');
+    }
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    // Проверяем, что ответ – JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Сервер вернул не JSON (${text.slice(0, 100)})`);
+    }
+    
+    return response.json();
+}
+
+// API functions
 async function fetchAppDetails(packageName, { signal } = {}) {
     try {
-        const response = await fetch(
-            CORS_PROXY + `https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`,
+        const data = await fetchWithProxy(
+            `https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`,
             { signal }
         );
-        const data = await response.json();
         return data.code === 'OK' && data.body ? data.body : null;
     } catch (error) {
-        if (error.name !== 'AbortError') console.error('Error fetching app details:', error);
+        if (error.name !== 'AbortError') {
+            console.error('Error fetching app details:', error);
+            throw error; // пробрасываем дальше для обработки
+        }
         return null;
     }
 }
 
 async function fetchAppRating(packageName) {
     try {
-        const response = await fetch(
-            CORS_PROXY + `https://backapi.rustore.ru/applicationData/rating/${packageName}`
+        const data = await fetchWithProxy(
+            `https://backapi.rustore.ru/applicationData/rating/${packageName}`
         );
-        const data = await response.json();
         return data.code === 'OK' && data.body ? data.body : null;
-    } catch {
+    } catch (error) {
+        console.error('Error fetching rating:', error);
         return null;
     }
 }
@@ -159,12 +186,10 @@ async function searchApps(query, isLoadMore = false) {
     state.isLoading = true;
 
     try {
-        const response = await fetch(
-            CORS_PROXY +
+        const data = await fetchWithProxy(
             `https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`,
             { signal: state.controller.signal }
         );
-        const data = await response.json();
 
         if (query !== state.query) return;
 
@@ -182,22 +207,33 @@ async function searchApps(query, isLoadMore = false) {
 
             for (const app of results) {
                 if (query !== state.query) return;
-                const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
-                if (appDetails && query === state.query) {
-                    resultsContainer.appendChild(createAppCard(appDetails, app));
+                try {
+                    const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
+                    if (appDetails && query === state.query) {
+                        resultsContainer.appendChild(createAppCard(appDetails, app));
+                    }
+                } catch (detailsError) {
+                    // Если детали не загрузились, показываем карточку без них (или пропускаем)
+                    console.warn('Skipping app due to details error:', detailsError);
                 }
             }
 
             state.hasMorePages = state.page < data.body.totalPages - 1;
             state.page++;
         } else {
-            throw new Error('API вернул ошибку');
+            throw new Error('API вернул ошибку: ' + (data.message || 'неизвестная ошибка'));
         }
     } catch (error) {
         if (error.name !== 'AbortError') {
             console.error('Error searching apps:', error);
             if (!isLoadMore && query === state.query) {
-                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', 'Проверьте интернет-соединение');
+                let userMessage = 'Проверьте интернет-соединение.';
+                if (error.message.includes('403')) {
+                    userMessage = error.message; // сообщение о доступе к прокси
+                } else if (error.message.includes('HTTP')) {
+                    userMessage = `Сервер вернул ошибку: ${error.message}`;
+                }
+                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', userMessage);
             }
         }
     } finally {
@@ -315,8 +351,8 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
 
     try {
         const density = options.screenDensity || 320;
-        const response = await fetch(
-            CORS_PROXY + 'https://backapi.rustore.ru/applicationData/v2/download-link',
+        const data = await fetchWithProxy(
+            'https://backapi.rustore.ru/applicationData/v2/download-link',
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -333,7 +369,7 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
                 })
             }
         );
-        const data = await response.json();
+
         if (data.code === 'OK' && data.body?.downloadUrls?.length) {
             const urls = data.body.downloadUrls;
             container.innerHTML = `
@@ -399,10 +435,9 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
 async function showVersionHistory(appId) {
     ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4">Загрузка...</div>');
     try {
-        const response = await fetch(
-            CORS_PROXY + `https://backapi.rustore.ru/applicationData/allAppVersionWhatsNew/${appId}`
+        const data = await fetchWithProxy(
+            `https://backapi.rustore.ru/applicationData/allAppVersionWhatsNew/${appId}`
         );
-        const data = await response.json();
         if (data.code === 'OK' && data.body) {
             const versions = data.body.content;
             const container = document.getElementById('versionHistory');
@@ -423,7 +458,7 @@ async function showVersionHistory(appId) {
             ModalManager.showError('versionHistory', 'Ошибка', 'Не удалось загрузить историю');
         }
     } catch (error) {
-        ModalManager.showError('versionHistory', 'Ошибка', 'Проверьте соединение');
+        ModalManager.showError('versionHistory', 'Ошибка', error.message);
     }
 }
 
@@ -459,11 +494,9 @@ async function showComments(packageName, pageNumber, firstOpen) {
 
     try {
         const filter = filterSelect.value;
-        const resp = await fetch(
-            CORS_PROXY +
+        const data = await fetchWithProxy(
             `https://backapi.rustore.ru/comment/comment?packageName=${packageName}&sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`
         );
-        const data = await resp.json();
         if (data.code === 'OK' && data.body) {
             const comments = data.body.content || [];
             const html = comments.map(c => `
@@ -485,7 +518,7 @@ async function showComments(packageName, pageNumber, firstOpen) {
             ModalManager.showError('appCommentsBody', 'Ошибка', 'Не удалось загрузить отзывы');
         }
     } catch (error) {
-        ModalManager.showError('appCommentsBody', 'Ошибка', 'Проверьте соединение');
+        ModalManager.showError('appCommentsBody', 'Ошибка', error.message);
     }
 }
 
@@ -527,7 +560,7 @@ function closeImagePreview() {
     state.imageIndex = 0;
 }
 
-// Поиск по ссылке (использует fetchAppDetails и fetchAppRating, уже с прокси)
+// Поиск по ссылке (использует fetchAppDetails)
 async function searchByUrl() {
     const urlInput = document.getElementById('urlInput');
     const url = urlInput.value.trim();
@@ -554,7 +587,7 @@ async function searchByUrl() {
             resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложение не найдено</p></div>';
         }
     } catch (error) {
-        resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-red-600">Ошибка загрузки</p></div>';
+        resultsContainer.innerHTML = `<div class="col-span-full text-center p-4"><p class="text-red-600">Ошибка загрузки: ${error.message}</p></div>`;
     }
 }
 

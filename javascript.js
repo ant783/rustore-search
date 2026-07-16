@@ -1,7 +1,7 @@
 // ============================================================
 //  ПРОКСИ-НАСТРОЙКА (решает CORS)
 // ============================================================
-const PROXY_URL = 'https://cors-anywhere.herokuapp.com/';
+const PROXY_URL = 'https://corsproxy.io/?';
 const PUBLIC_TOKEN = '';  // вставьте ваш JWT, если есть
 
 const API_BASE = 'https://public-api.rustore.ru/public/v1';

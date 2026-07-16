@@ -1,14 +1,4 @@
-// Android SDK version mapping
-const sdkVersions = {
-    1: '1.0', 2: '1.1', 3: '1.5', 4: '1.6', 5: '2.0', 6: '2.0.1',
-    7: '2.1', 8: '2.2', 9: '2.3', 10: '2.3.3', 11: '3.0', 12: '3.1',
-    13: '3.2', 14: '4.0', 15: '4.0.3', 16: '4.1', 17: '4.2', 18: '4.3',
-    19: '4.4', 20: '4.4W', 21: '5.0', 22: '5.1', 23: '6.0', 24: '7.0',
-    25: '7.1', 26: '8.0', 27: '8.1', 28: '9.0', 29: '10', 30: '11',
-    31: '12', 32: '12.1', 33: '13', 34: '14', 35: '15', 36: '16'
-};
-
-const getAndroidVersion = sdk => sdkVersions[sdk] ? `Android ${sdkVersions[sdk]}` : `API ${sdk}`;
+// ---- Вспомогательные функции ----
 const formatFileSize = bytes => {
     if (bytes === 0) return '0 Bytes';
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -16,8 +6,6 @@ const formatFileSize = bytes => {
     return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 };
 const formatDate = date => new Date(date).toLocaleDateString();
-const roundToDecimal = (num, places = 2) => Math.round(num * 10 ** places) / 10 ** places;
-
 const escapeHtml = (value) => {
     if (value == null) return '';
     return String(value)
@@ -27,7 +15,6 @@ const escapeHtml = (value) => {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 };
-
 const createRatingStars = rating => {
     const safeRating = typeof rating === 'number' && !isNaN(rating) ? rating : 0;
     const fullStars = Math.floor(safeRating);
@@ -80,8 +67,6 @@ const state = {
     isLoading: false,
     hasMorePages: true,
     query: '',
-    images: [],
-    imageIndex: 0,
     reset() {
         if (this.controller) this.controller.abort();
         this.controller = new AbortController();
@@ -91,75 +76,8 @@ const state = {
 };
 
 // ============================================================
-//  Универсальная функция для запросов через прокси с обработкой ошибок
+//  ПОИСК НА UPTODOWN (прямой запрос)
 // ============================================================
-async function fetchWithProxy(url, options = {}) {
-    const proxyUrl = CORS_PROXY + url;
-    const response = await fetch(proxyUrl, options);
-    
-    // Если статус 403 – вероятно, нужно запросить доступ у cors-anywhere
-    if (response.status === 403) {
-        throw new Error('Для работы с прокси-сервером необходимо получить временный доступ. Перейдите по ссылке https://cors-anywhere.herokuapp.com/ и нажмите "Request temporary access".');
-    }
-    
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    // Проверяем, что ответ – JSON
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(`Сервер вернул не JSON (${text.slice(0, 100)})`);
-    }
-    
-    return response.json();
-}
-
-// API functions
-async function fetchAppDetails(packageName, { signal } = {}) {
-    try {
-        const data = await fetchWithProxy(
-            `https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`,
-            { signal }
-        );
-        return data.code === 'OK' && data.body ? data.body : null;
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Error fetching app details:', error);
-            throw error; // пробрасываем дальше для обработки
-        }
-        return null;
-    }
-}
-
-async function fetchAppRating(packageName) {
-    try {
-        const data = await fetchWithProxy(
-            `https://backapi.rustore.ru/applicationData/rating/${packageName}`
-        );
-        return data.code === 'OK' && data.body ? data.body : null;
-    } catch (error) {
-        console.error('Error fetching rating:', error);
-        return null;
-    }
-}
-
-function extractPackageNameFromUrl(url) {
-    try {
-        const urlObj = new URL(url);
-        const pathParts = urlObj.pathname.split('/');
-        const appIndex = pathParts.indexOf('app');
-        if (appIndex !== -1 && pathParts[appIndex + 1]) {
-            return pathParts[appIndex + 1];
-        }
-        return null;
-    } catch {
-        return null;
-    }
-}
-
-// Поиск приложений
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -179,54 +97,90 @@ async function searchApps(query, isLoadMore = false) {
     state.isLoading = true;
 
     try {
-        const data = await fetchWithProxy(
-            `https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`,
-            { signal: state.controller.signal }
-        );
+        const url = `https://ru.uptodown.com/search?q=${encodeURIComponent(query.trim())}&page=${state.page}`;
+        const response = await fetch(url, {
+            signal: state.controller.signal,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
 
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const html = await response.text();
         if (query !== state.query) return;
 
-        if (data.code === 'OK' && data.body) {
-            const results = data.body.content;
-            if (!isLoadMore) resultsContainer.innerHTML = '';
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
 
-            if (!results || results.length === 0) {
-                if (!isLoadMore) {
-                    resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
-                }
-                state.hasMorePages = false;
-                return;
+        // Селекторы карточек (актуальны на март 2026)
+        const cards = doc.querySelectorAll('.app-card, .search-result-item, .card');
+
+        if (!cards.length) {
+            if (!isLoadMore) {
+                resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
             }
-
-            for (const app of results) {
-                if (query !== state.query) return;
-                try {
-                    const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
-                    if (appDetails && query === state.query) {
-                        resultsContainer.appendChild(createAppCard(appDetails, app));
-                    }
-                } catch (detailsError) {
-                    // Если детали не загрузились, показываем карточку без них (или пропускаем)
-                    console.warn('Skipping app due to details error:', detailsError);
-                }
-            }
-
-            state.hasMorePages = state.page < data.body.totalPages - 1;
-            state.page++;
-        } else {
-            throw new Error('API вернул ошибку: ' + (data.message || 'неизвестная ошибка'));
+            state.hasMorePages = false;
+            return;
         }
+
+        if (!isLoadMore) resultsContainer.innerHTML = '';
+
+        for (const card of cards) {
+            if (query !== state.query) return;
+
+            // Ищем ссылку на страницу приложения
+            const linkEl = card.querySelector('a[href*="/android/"]');
+            if (!linkEl) continue;
+            const appUrl = 'https://ru.uptodown.com' + linkEl.getAttribute('href');
+
+            // Название
+            const nameEl = card.querySelector('.app-card__name') || card.querySelector('h3') || card.querySelector('.title');
+            const appName = nameEl ? nameEl.textContent.trim() : 'Unknown';
+
+            // Иконка
+            const iconEl = card.querySelector('img[src*="icon"]') || card.querySelector('img');
+            const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
+
+            // Описание
+            const descEl = card.querySelector('.app-card__description') || card.querySelector('.description');
+            const shortDesc = descEl ? descEl.textContent.trim() : '';
+
+            // Рейтинг
+            const ratingEl = card.querySelector('.rating-value') || card.querySelector('.stars');
+            let rating = 0;
+            if (ratingEl) {
+                const match = ratingEl.textContent.match(/(\d+(\.\d+)?)/);
+                if (match) rating = parseFloat(match[0]);
+            }
+
+            const appData = {
+                appName,
+                iconUrl,
+                shortDescription: shortDesc,
+                appUrl,
+                rating,
+                packageName: appUrl.split('/').pop() || appName
+            };
+            resultsContainer.appendChild(createAppCard(appData));
+        }
+
+        // Проверяем наличие следующей страницы
+        const nextBtn = doc.querySelector('a[rel="next"]');
+        state.hasMorePages = !!nextBtn;
+        state.page++;
+
     } catch (error) {
         if (error.name !== 'AbortError') {
             console.error('Error searching apps:', error);
             if (!isLoadMore && query === state.query) {
-                let userMessage = 'Проверьте интернет-соединение.';
-                if (error.message.includes('403')) {
-                    userMessage = error.message; // сообщение о доступе к прокси
-                } else if (error.message.includes('HTTP')) {
+                let userMessage = 'Проверьте интернет-соединение и отключите блокировку CORS (используйте расширение).';
+                if (error.message.includes('HTTP')) {
                     userMessage = `Сервер вернул ошибку: ${error.message}`;
                 }
-                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', userMessage);
+                ModalManager.showError('searchResults', 'Не удалось подключиться к Uptodown', userMessage);
             }
         }
     } finally {
@@ -234,357 +188,176 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// Создание карточки приложения (без изменений)
-function createAppCard(appDetails, app) {
-    const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
-    const iconUrl = escapeHtml(appDetails.iconUrl || '');
-    const appName = escapeHtml(appDetails.appName || '');
-    const packageName = escapeHtml(appDetails.packageName || '');
-    const shortDescription = escapeHtml(appDetails.shortDescription || '');
-    const appId = escapeHtml(String(appDetails.appId));
-    const versionCode = escapeHtml(String(appDetails.versionCode));
-    const fileSize = formatFileSize(appDetails.fileSize || 0);
-    const minSdk = escapeHtml(getAndroidVersion(appDetails.minSdkVersion));
-    const versionName = escapeHtml(appDetails.versionName || '');
-    const downloads = (appDetails.downloads || 0).toLocaleString();
-    const updated = formatDate(appDetails.appVerUpdatedAt);
-    const added = appDetails.appVerUpdatedAt > appDetails.firstPublishedAt
-        ? formatDate(appDetails.firstPublishedAt)
-        : formatDate(appDetails.appVerUpdatedAt);
-    const rating = app.averageUserRating || 0;
-    const totalRatings = (app.totalRatings || 0).toLocaleString();
+// Создание карточки приложения
+function createAppCard(appData) {
+    const { appName, iconUrl, shortDescription, appUrl, rating, packageName } = appData;
     const ratingStars = createRatingStars(rating);
-    const ratingValue = roundToDecimal(rating);
-    const fullDescription = appDetails.fullDescription || '';
-    const descJson = JSON.stringify(fullDescription);
-
-    let screenshotsHtml = '';
-    for (const s of screenshots) {
-        const src = escapeHtml(s.fileUrl);
-        screenshotsHtml += `<img src="${src}" alt="Screenshot" class="w-40 cursor-pointer rounded shadow" onclick="openPreview('${src}', event)">`;
-    }
+    const ratingValue = rating.toFixed(1);
 
     const card = document.createElement('div');
     card.className = 'app-card p-4 flex flex-col justify-between h-full';
     card.innerHTML = `
         <div class="flex items-start gap-4">
-            <img src="${iconUrl}" alt="${appName}" class="w-20 h-20 rounded-lg">
+            <img src="${escapeHtml(iconUrl)}" alt="${escapeHtml(appName)}" class="w-20 h-20 rounded-lg" onerror="this.src='https://via.placeholder.com/80'">
             <div class="flex-1 flex flex-col min-w-0">
-                <h2 class="text-xl font-bold break-words">${appName}</h2>
-                <p class="text-gray-600 break-words" title="${packageName}">${packageName}</p>
+                <h2 class="text-xl font-bold break-words">${escapeHtml(appName)}</h2>
+                <p class="text-gray-600 break-words text-sm" title="${escapeHtml(packageName)}">${escapeHtml(packageName)}</p>
                 <div class="rating mt-2">
                     ${ratingStars}
                     ${ratingValue}
-                    <span class="text-sm text-gray-600">(${totalRatings})</span>
                 </div>
-                <button class="comments-toggle" data-package="${escapeHtml(appDetails.packageName)}">Показать отзывы</button>
             </div>
         </div>
         <div class="mt-4">
-            <p class="text-gray-700">${shortDescription}</p>
-            <button class="description-toggle mt-2" data-name="${appName}" data-desc='${descJson}'>Показать полное описание</button>
-        </div>
-        <div class="screenshots-container my-4">${screenshotsHtml}</div>
-        <div class="grid grid-cols-2 gap-2 text-sm text-gray-600">
-            <div>App ID: ${appId}</div>
-            <div>Version Code: ${versionCode}</div>
-            <div>Size: ~${fileSize}</div>
-            <div>Min SDK: ${minSdk}</div>
-            <div>Version: ${versionName}</div>
-            <div>Downloads: ${downloads}</div>
-            <div>Updated: ${updated}</div>
-            <div>Added: ${added}</div>
+            <p class="text-gray-700 text-sm">${escapeHtml(shortDescription)}</p>
         </div>
         <div class="mt-4 flex justify-between items-center">
-            <button class="download-btn" data-appid="${appDetails.appId}" data-sdk="${appDetails.minSdkVersion}" data-appname="${appName}" data-versionname="${versionName}">Скачать</button>
-            <span class="version-history-btn" data-appid="${appDetails.appId}">История версий</span>
+            <button class="download-btn" data-appurl="${escapeHtml(appUrl)}" data-appname="${escapeHtml(appName)}">Скачать</button>
+            <span class="text-xs text-gray-500">Uptodown</span>
         </div>
     `;
 
-    // Привязка событий
-    card.querySelector('.comments-toggle')?.addEventListener('click', (e) => {
-        const pkg = e.currentTarget.getAttribute('data-package');
-        showComments(pkg, 0, true);
-    });
-    card.querySelector('.description-toggle')?.addEventListener('click', (e) => {
-        const name = e.currentTarget.getAttribute('data-name');
-        const desc = e.currentTarget.getAttribute('data-desc');
-        showDescription(name, desc);
-    });
     card.querySelector('.download-btn')?.addEventListener('click', (e) => {
-        const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
-        const sdk = parseInt(e.currentTarget.getAttribute('data-sdk'));
+        const appUrl = e.currentTarget.getAttribute('data-appurl');
         const appName = e.currentTarget.getAttribute('data-appname');
-        const versionName = e.currentTarget.getAttribute('data-versionname');
-        downloadApp(appId, sdk, appName, versionName);
-    });
-    card.querySelector('.version-history-btn')?.addEventListener('click', (e) => {
-        const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
-        showVersionHistory(appId);
+        downloadApp(appUrl, appName);
     });
 
     return card;
 }
 
-// Функция скачивания APK (с прокси)
-async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
+// Скачивание APK (прямой запрос к странице приложения)
+async function downloadApp(appUrl, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
     if (!container) return;
 
-    const sanitizeFileName = (name) => {
-        return name
-            .replace(/[\\/*?:"<>|]/g, '_')
-            .replace(/\s+/g, '_')
-            .trim();
-    };
-    const safeAppName = sanitizeFileName(appName || 'app');
-    const safeVersion = sanitizeFileName(versionName || 'unknown');
-    const suggestedFileName = `${safeAppName}_${safeVersion}.apk`;
-
     try {
-        const density = options.screenDensity || 320;
-        const data = await fetchWithProxy(
-            'https://backapi.rustore.ru/applicationData/v2/download-link',
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    appId,
-                    firstInstall: true,
-                    mobileServices: [],
-                    supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
-                    screenDensity: density,
-                    supportedLocales: ['ru_RU'],
-                    sdkVersion,
-                    withoutSplits: false,
-                    signatureFingerprint: null
-                })
+        const response = await fetch(appUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
-        );
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
 
-        if (data.code === 'OK' && data.body?.downloadUrls?.length) {
-            const urls = data.body.downloadUrls;
-            container.innerHTML = `
-                <div class="space-y-3">
-                    <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
-                        <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
-                        <div class="text-sm text-yellow-700 mt-1">
-                            При клике на ссылку браузер может сохранить файл с именем из URL. 
-                            Чтобы сохранить как <strong>${escapeHtml(suggestedFileName)}</strong>:
-                            <ul class="list-disc list-inside mt-1 space-y-1">
-                                <li>Нажмите правой кнопкой мыши по ссылке и выберите «Сохранить ссылку как…»</li>
-                                <li>В поле «Имя файла» укажите <code class="bg-gray-100 px-1 rounded">${escapeHtml(suggestedFileName)}</code></li>
-                                <li>Используйте команды ниже для загрузки через терминал</li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div class="font-semibold">Ссылки для скачивания:</div>
-                    ${urls.map((u, idx) => `
-                        <div class="p-2 bg-gray-50 rounded break-all">
-                            <div class="text-sm text-gray-600 mb-1">Файл ${idx+1}</div>
-                            <div class="flex flex-wrap gap-2 items-center">
-                                <a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 underline text-sm">${escapeHtml(u.url)}</a>
-                            </div>
-                        </div>
-                    `).join('')}
-                    <div class="mt-4 p-3 bg-gray-100 rounded">
-                        <div class="font-semibold">Команды для загрузки с правильным именем:</div>
-                        <div class="mt-2">
-                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                                curl -L -o "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
-                            </div>
-                            <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
-                        </div>
-                        <div class="mt-2">
-                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                                wget -O "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
-                            </div>
-                            <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
-                        </div>
+        let downloadLink = null;
+
+        // Поиск ссылки на APK
+        // 1. Кнопка с data-url
+        const btn = doc.querySelector('.download-button[data-url]') || 
+                    doc.querySelector('a[data-url*=".apk"]') ||
+                    doc.querySelector('a[href*=".apk"]');
+        if (btn) {
+            downloadLink = btn.getAttribute('data-url') || btn.getAttribute('href');
+        }
+
+        // 2. Ссылки с текстом "Скачать"
+        if (!downloadLink) {
+            const links = doc.querySelectorAll('a');
+            for (const link of links) {
+                const text = link.textContent.toLowerCase();
+                if ((text.includes('скачать') || text.includes('descargar') || text.includes('download')) && link.href.includes('.apk')) {
+                    downloadLink = link.href;
+                    break;
+                }
+            }
+        }
+
+        // 3. Мета-теги
+        if (!downloadLink) {
+            const meta = doc.querySelector('meta[property="og:video"]');
+            if (meta) downloadLink = meta.getAttribute('content');
+        }
+
+        if (!downloadLink) {
+            throw new Error('Не удалось найти ссылку на APK на странице');
+        }
+
+        if (downloadLink.startsWith('/')) {
+            downloadLink = 'https://ru.uptodown.com' + downloadLink;
+        }
+
+        const suggestedFileName = `${appName.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_')}.apk`;
+
+        container.innerHTML = `
+            <div class="space-y-3">
+                <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
+                    <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
+                    <div class="text-sm text-yellow-700 mt-1">
+                        При клике на ссылку браузер может сохранить файл с именем из URL. 
+                        Чтобы сохранить как <strong>${escapeHtml(suggestedFileName)}</strong>:
+                        <ul class="list-disc list-inside mt-1 space-y-1">
+                            <li>Нажмите правой кнопкой мыши по ссылке и выберите «Сохранить ссылку как…»</li>
+                            <li>В поле «Имя файла» укажите <code class="bg-gray-100 px-1 rounded">${escapeHtml(suggestedFileName)}</code></li>
+                            <li>Используйте команды ниже для загрузки через терминал</li>
+                        </ul>
                     </div>
                 </div>
-            `;
+                <div class="font-semibold">Ссылка для скачивания:</div>
+                <div class="p-2 bg-gray-50 rounded break-all">
+                    <a href="${escapeHtml(downloadLink)}" target="_blank" class="text-blue-600 underline">${escapeHtml(downloadLink)}</a>
+                </div>
+                <div class="mt-4 p-3 bg-gray-100 rounded">
+                    <div class="font-semibold">Команды для загрузки с правильным именем:</div>
+                    <div class="mt-2">
+                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
+                            curl -L -o "${suggestedFileName}" "${escapeHtml(downloadLink)}"
+                        </div>
+                        <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
+                    </div>
+                    <div class="mt-2">
+                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
+                            wget -O "${suggestedFileName}" "${escapeHtml(downloadLink)}"
+                        </div>
+                        <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
+                    </div>
+                </div>
+            </div>
+        `;
 
-            document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
-                const cmd = `curl -L -o "${suggestedFileName}" "${urls[0].url}"`;
-                await navigator.clipboard.writeText(cmd);
-                alert('Команда curl скопирована');
-            });
-            document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
-                const cmd = `wget -O "${suggestedFileName}" "${urls[0].url}"`;
-                await navigator.clipboard.writeText(cmd);
-                alert('Команда wget скопирована');
-            });
-        } else {
-            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки</div>';
-        }
+        document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
+            const cmd = `curl -L -o "${suggestedFileName}" "${downloadLink}"`;
+            await navigator.clipboard.writeText(cmd);
+            alert('Команда curl скопирована');
+        });
+        document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
+            const cmd = `wget -O "${suggestedFileName}" "${downloadLink}"`;
+            await navigator.clipboard.writeText(cmd);
+            alert('Команда wget скопирована');
+        });
+
     } catch (error) {
         container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
     }
 }
 
-// История версий (с прокси)
-async function showVersionHistory(appId) {
-    ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4">Загрузка...</div>');
-    try {
-        const data = await fetchWithProxy(
-            `https://backapi.rustore.ru/applicationData/allAppVersionWhatsNew/${appId}`
-        );
-        if (data.code === 'OK' && data.body) {
-            const versions = data.body.content;
-            const container = document.getElementById('versionHistory');
-            if (container) {
-                if (versions?.length) {
-                    container.innerHTML = versions.map(v => `
-                        <div class="border-b pb-4">
-                            <div class="font-bold">Версия ${escapeHtml(v.versionName)}</div>
-                            <div class="text-sm text-gray-600">${formatDate(v.appVerUpdatedAt)}</div>
-                            <div class="mt-2">${escapeHtml(v.whatsNew)}</div>
-                        </div>
-                    `).join('');
-                } else {
-                    container.innerHTML = '<div class="text-center p-4">Нет данных</div>';
-                }
-            }
-        } else {
-            ModalManager.showError('versionHistory', 'Ошибка', 'Не удалось загрузить историю');
-        }
-    } catch (error) {
-        ModalManager.showError('versionHistory', 'Ошибка', error.message);
-    }
-}
-
+// Остальные функции (заглушки)
 function showDescription(appName, description) {
-    const modal = document.getElementById('descriptionModal');
-    const content = document.getElementById('descriptionContent');
-    if (!modal || !content) return;
-    modal.querySelector('h2').textContent = `${appName} — Описание`;
-    content.textContent = description;
-    modal.classList.remove('hidden');
-    modal.classList.add('show');
+    alert('Описание доступно только на сайте Uptodown. Откройте страницу приложения.');
 }
-
-// Отзывы (с прокси)
 async function showComments(packageName, pageNumber, firstOpen) {
-    const modal = document.getElementById('commentsModal');
-    const header = document.getElementById('appCommentsHeader');
-    const filterSelect = document.getElementById('commentsFilterOption');
-    const body = document.getElementById('appCommentsBody');
-    if (!modal || !header || !filterSelect || !body) return;
-
-    if (firstOpen) {
-        header.innerHTML = 'Отзывы о приложении';
-        filterSelect.classList.remove('hidden');
-        ModalManager.show('commentsModal');
-        modal.dataset.packageName = packageName;
-        modal.dataset.pageCount = '0';
-        modal.dataset.allCommentsLoaded = 'false';
-        modal.dataset.canLoad = 'true';
-    }
-
-    if (pageNumber === 0) body.innerHTML = '<div class="text-center p-4">Загрузка отзывов...</div>';
-
-    try {
-        const filter = filterSelect.value;
-        const data = await fetchWithProxy(
-            `https://backapi.rustore.ru/comment/comment?packageName=${packageName}&sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`
-        );
-        if (data.code === 'OK' && data.body) {
-            const comments = data.body.content || [];
-            const html = comments.map(c => `
-                <div class="p-4 bg-gray-100 rounded-xl">
-                    <div class="font-semibold">${escapeHtml(c.firstName)}</div>
-                    <div class="rating">${createRatingStars(c.appRating)}</div>
-                    <div class="text-sm text-gray-600">${formatDate(c.commentDate)}</div>
-                    <div class="mt-2">${escapeHtml(c.commentText)}</div>
-                    <div class="mt-2"><span class="text-green-600">👍 ${c.likeCounter}</span> | <span class="text-red-600">👎 ${c.dislikeCounter}</span></div>
-                    ${c.devResponse ? `<div class="mt-2 italic text-gray-700">Ответ разработчика: ${escapeHtml(c.devResponse)}</div>` : ''}
-                </div>
-            `).join('');
-            if (pageNumber === 0) body.innerHTML = html || '<div class="text-center p-4">Нет отзывов</div>';
-            else body.insertAdjacentHTML('beforeend', html);
-            modal.dataset.allCommentsLoaded = (comments.length < 20).toString();
-            modal.dataset.canLoad = 'true';
-            modal.dataset.pageCount = pageNumber;
-        } else {
-            ModalManager.showError('appCommentsBody', 'Ошибка', 'Не удалось загрузить отзывы');
-        }
-    } catch (error) {
-        ModalManager.showError('appCommentsBody', 'Ошибка', error.message);
-    }
+    alert('Отзывы доступны только на сайте Uptodown.');
 }
-
-// Предпросмотр изображений (без изменений)
-function openPreview(imageUrl, event) {
-    const modal = document.getElementById('imagePreviewModal');
-    const card = event.target.closest('.app-card');
-    if (!card) return;
-    const imgs = Array.from(card.querySelectorAll('.screenshots-container img'));
-    state.images = imgs.map(img => img.src);
-    state.imageIndex = state.images.indexOf(imageUrl);
-    document.getElementById('previewImage').src = imageUrl;
-    modal.classList.remove('hidden');
-    modal.classList.add('show');
-    updateNavButtons();
-}
-
-function updateNavButtons() {
-    const prev = document.getElementById('prevImage');
-    const next = document.getElementById('nextImage');
-    const prog = document.getElementById('imageProgress');
-    if (prev) prev.style.display = state.imageIndex > 0 ? 'block' : 'none';
-    if (next) next.style.display = state.imageIndex < state.images.length - 1 ? 'block' : 'none';
-    if (prog) prog.textContent = `${state.imageIndex + 1} / ${state.images.length}`;
-}
-
-function navigateImage(dir) {
-    if (dir === 'prev' && state.imageIndex > 0) state.imageIndex--;
-    else if (dir === 'next' && state.imageIndex < state.images.length - 1) state.imageIndex++;
-    document.getElementById('previewImage').src = state.images[state.imageIndex];
-    updateNavButtons();
-}
-
-function closeImagePreview() {
-    const modal = document.getElementById('imagePreviewModal');
-    modal.classList.add('hidden');
-    modal.classList.remove('show');
-    state.images = [];
-    state.imageIndex = 0;
-}
-
-// Поиск по ссылке (использует fetchAppDetails)
-async function searchByUrl() {
+function searchByUrl() {
     const urlInput = document.getElementById('urlInput');
     const url = urlInput.value.trim();
     if (!url) return;
-    const packageName = extractPackageNameFromUrl(url);
-    if (!packageName) {
-        alert('Не удалось извлечь идентификатор приложения из ссылки. Пример: https://www.rustore.ru/catalog/app/com.example.app');
-        return;
-    }
-    const resultsContainer = document.getElementById('searchResults');
-    resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Загрузка...</p></div>';
-    try {
-        const appDetails = await fetchAppDetails(packageName);
-        if (appDetails) {
-            const rating = await fetchAppRating(packageName);
-            const app = {
-                averageUserRating: rating?.averageUserRating || 0,
-                totalRatings: rating?.totalRatings || 0,
-                packageName: packageName
-            };
-            resultsContainer.innerHTML = '';
-            resultsContainer.appendChild(createAppCard(appDetails, app));
-        } else {
-            resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложение не найдено</p></div>';
-        }
-    } catch (error) {
-        resultsContainer.innerHTML = `<div class="col-span-full text-center p-4"><p class="text-red-600">Ошибка загрузки: ${error.message}</p></div>`;
+    if (url.includes('uptodown.com')) {
+        window.open(url, '_blank');
+    } else {
+        alert('Введите ссылку на страницу приложения на Uptodown (например, https://ru.uptodown.com/android/com.example.app)');
     }
 }
+function openPreview(imageUrl, event) { /* не используется */ }
+function closeImagePreview() { /* не используется */ }
+function navigateImage(dir) { /* не используется */ }
 
-// Инициализация (без изменений)
+// Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');
@@ -612,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
+    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -636,6 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Бесконечный скролл
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

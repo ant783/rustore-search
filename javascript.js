@@ -1,31 +1,31 @@
 // ============================================================
-//  ГИБРИДНЫЙ ПОДХОД: официальное API + backapi для поиска
+//  ПРОКСИ-НАСТРОЙКА (решает CORS)
 // ============================================================
-// - Поиск приложений → backapi.rustore.ru (неофициальный, но работает)
-// - Детали, рейтинг, отзывы, скачивание → public-api.rustore.ru (официальный)
-//
-// ВНИМАНИЕ: Для работы с официальным API может потребоваться
-// токен доступа (Public-Token). Если у вас его нет, некоторые
-// эндпоинты могут не работать. В этом случае используйте
-// обратную совместимость с backapi.rustore.ru (закомментировано).
+const PROXY_URL = 'https://cors-anywhere.herokuapp.com/';
+const PUBLIC_TOKEN = '';  // вставьте ваш JWT, если есть
 
-// ============================================================
-//  НАСТРОЙКА
-// ============================================================
-
-// Если у вас есть токен доступа к Public API RuStore, укажите его здесь
-// Получить токен можно в консоли разработчика RuStore
-const PUBLIC_TOKEN = 'MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCkjfTDzkALpG1YwPs31DsHSVqr4gsYPAhD68Ft6aaRwljFu6d/C7xe1ZujFF+dRge9uJzAlM3ITAQ2LobPAI2KqsZEvrwUXUiHA2HX2lfJuwNiiQGZV2nj8IEKgr9xayRAY7hWImPSltU2O957x+++etm8MHzKdVLRrRl+s2qHF+qcNfHxbtGQwzSouhEbbJbPiLBNtcqb9hTYI5nH+cNfJuhJGFIZ+rASDUW9UbNrTK4gtM2L9xPEzzEsubjLatulyT/6ieY0hdxuNgHZFoSl4XiC1AfBFzModzwDY4AJQvx+h56mp1+xpfUs74iQ0ReRnu58NTBSGz/TCgW+zA0/AgMBAAECggEAIr3X0ek/K1YVQfpIb8KOjdzGWGi6d+zgv9pL9dUxNi/mhyS12cRUCl+l4tnfz/gjlUIfUid4hNPLxdav3o9a0s54WrY8Rj5lnB+yLhzqkOw7bDfJzyKd+CJkVCBDpAH/XtrO5dyP37u5myAruk19h+UvCCTii+oWSK93pQDjOk8TFZ43G64vB4B8JA2cWVXKru4EGCPjC8+JF6YZ9P/xcPGvm38+8UFzRUsRI+zDDj+pVfFQXlzCeUeaIrmb1/KcSCMEYgk4/dNMM9DxanqRP/rfvy+kBAI7PkNtyFEDgd7kDRA/Jo1r1ceraidcexCWQuzL5aN/SyZYp/pRAgRWbQKBgQDXI9u4++D9hv6c5P4pyV+8oCEtu+npqzzVUrjmIw5bGA8xjpyzzZFxTdLm6FsNVlrUpTL4MbJPmU1IuoNFXPHZerzL78pzFXgVbKjTkJQ/vl7BVEjtK0Zyr+XqQ1oS+4WeAPOcRZxRu5MMwaTQkfrsXUlilxxvJ/IJbHKTq9tUSwKBgQDDzp7n/PCpM/0fVfLwYM2C1YmXAte5wlaPtrhxvS1gZeVQX4fi21lCV5RKVQHEyQve6SocVNq+rJfQ0DTeI7nvrifyUzCM9Uo44ekmHbuoUEZSTxcQ7wuEouMm4t7F/BKIxvggtQyZ/QCwdFfoc/hdAHQ+hYlzQD2DNtRoxUqKXQKBgBGQ3PTapAEvT4Sx8cqppYZ6MJtSV4P7tkjYqz4nKJnpefwa39KSe0icCRdPa3fIUDxCjMnVDPEQ3E2O5P752sleCyI/nvEMlLRzHcnAaUpXGdeBMT8kJGli0UvyWd1o6fz/qORejqfhv9zvxqw87xbzevVwzyKISWvZjfVet9bHAoGAYJQYUuqytXJ8JimZkzDcDO1QWRjA2NHfKjGA1jDuIb8AlV0ZRC7W3t8duHAnWC2l2kP9Tk4YOrYch5U6jlrmyi6Ha4HWz5/pBReAjRlbRxCZLt3tzZ9qefhxu+to4BSN+8LP/inu1kExRteLyI7y8MRZkcEB48PK016G9Epjks0CgYB80QZC3+TSnzXyxaq8rVcYxZQaLC2q+cEQj6U6UIxYo3IEiHONEOuAoP2/wiGTuzmJBFrzG/QU6uP1J7GDGCOVXoTuJRG1kLF9/drRQktrS7MLpGtsMbULs2UR6afujI0Kcx8CLKRgL8rCyuYBHLIVQAl1oM2aExYPXmjsE1jGRQ=='; // например: 'eyJhbGciOiJIUzI1NiIs...'
-
-// Базовые URL
 const API_BASE = 'https://public-api.rustore.ru/public/v1';
 const BACKAPI_BASE = 'https://backapi.rustore.ru';
 
-// ============================================================
-//  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-// ============================================================
+async function proxyFetch(url, options = {}) {
+    const targetUrl = PROXY_URL + url;
+    const headers = options.headers || {};
+    if (PUBLIC_TOKEN && !headers['Public-Token']) {
+        headers['Public-Token'] = PUBLIC_TOKEN;
+    }
+    if (options.method === 'POST' && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+    }
+    const response = await fetch(targetUrl, { ...options, headers });
+    if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+    }
+    return response;
+}
 
-// Android SDK version mapping
+// ============================================================
+//  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений)
+// ============================================================
 const sdkVersions = {
     1: '1.0', 2: '1.1', 3: '1.5', 4: '1.6', 5: '2.0', 6: '2.0.1',
     7: '2.1', 8: '2.2', 9: '2.3', 10: '2.3.3', 11: '3.0', 12: '3.1',
@@ -69,7 +69,6 @@ const createRatingStars = rating => {
 // ============================================================
 //  MODAL MANAGER
 // ============================================================
-
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -106,7 +105,6 @@ const ModalManager = {
 // ============================================================
 //  STATE
 // ============================================================
-
 const state = {
     controller: null,
     page: 0,
@@ -124,68 +122,38 @@ const state = {
 };
 
 // ============================================================
-//  API ФУНКЦИИ (официальное API + backapi)
+//  API ФУНКЦИИ (все через proxyFetch)
 // ============================================================
-
-/**
- * Получение детальной информации о приложении
- * Использует официальное API: GET /public/v1/application/{packageName}
- * Документация: https://www.rustore.ru/help/work-with-rustore-api/api-upload-publication-app/get-app-list
- */
 async function fetchAppDetails(packageName, { signal } = {}) {
     try {
-        const headers = {};
-        if (PUBLIC_TOKEN) {
-            headers['Public-Token'] = PUBLIC_TOKEN;
-        }
-        const response = await fetch(`${API_BASE}/application/${packageName}`, {
-            signal,
-            headers
-        });
+        const response = await proxyFetch(`${API_BASE}/application/${packageName}`, { signal });
         const data = await response.json();
         return data.code === 'OK' && data.body ? data.body : null;
     } catch (error) {
         if (error.name !== 'AbortError') {
-            console.error('Error fetching app details from official API:', error);
-            // fallback на backapi
-            return fetchAppDetailsFallback(packageName, { signal });
+            console.error('Official API error, trying fallback:', error);
+            try {
+                const fallback = await proxyFetch(`${BACKAPI_BASE}/applicationData/overallInfo/${packageName}`, { signal });
+                const data = await fallback.json();
+                return data.code === 'OK' && data.body ? data.body : null;
+            } catch (e) {
+                if (e.name !== 'AbortError') console.error('Fallback error:', e);
+                return null;
+            }
         }
         return null;
     }
 }
 
-/**
- * Fallback: получение деталей через backapi (неофициальный)
- */
-async function fetchAppDetailsFallback(packageName, { signal } = {}) {
-    try {
-        const response = await fetch(`${BACKAPI_BASE}/applicationData/overallInfo/${packageName}`, { signal });
-        const data = await response.json();
-        return data.code === 'OK' && data.body ? data.body : null;
-    } catch (error) {
-        if (error.name !== 'AbortError') console.error('Error fetching app details (fallback):', error);
-        return null;
-    }
-}
-
-/**
- * Получение рейтинга приложения
- * Использует официальное API: GET /public/v1/application/{packageName}/rating
- */
 async function fetchAppRating(packageName) {
     try {
-        const headers = {};
-        if (PUBLIC_TOKEN) {
-            headers['Public-Token'] = PUBLIC_TOKEN;
-        }
-        const response = await fetch(`${API_BASE}/application/${packageName}/rating`, { headers });
+        const response = await proxyFetch(`${API_BASE}/application/${packageName}/rating`);
         const data = await response.json();
         return data.code === 'OK' && data.body ? data.body : null;
     } catch {
-        // fallback на backapi
         try {
-            const response = await fetch(`${BACKAPI_BASE}/applicationData/rating/${packageName}`);
-            const data = await response.json();
+            const fallback = await proxyFetch(`${BACKAPI_BASE}/applicationData/rating/${packageName}`);
+            const data = await fallback.json();
             return data.code === 'OK' && data.body ? data.body : null;
         } catch {
             return null;
@@ -193,9 +161,6 @@ async function fetchAppRating(packageName) {
     }
 }
 
-/**
- * Извлечение packageName из URL
- */
 function extractPackageNameFromUrl(url) {
     try {
         const urlObj = new URL(url);
@@ -211,19 +176,14 @@ function extractPackageNameFromUrl(url) {
 }
 
 // ============================================================
-//  ПОИСК ПРИЛОЖЕНИЙ (только через backapi)
+//  ПОИСК ПРИЛОЖЕНИЙ (через backapi, так как в официальном нет)
 // ============================================================
-// В официальном API нет открытого эндпоинта для поиска,
-// поэтому используем неофициальный backapi.rustore.ru
-// ============================================================
-
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
         state.query = query;
         state.isLoading = false;
     }
-
     if (!query.trim() || state.isLoading || !state.hasMorePages) return;
 
     const resultsContainer = document.getElementById('searchResults');
@@ -236,7 +196,7 @@ async function searchApps(query, isLoadMore = false) {
     state.isLoading = true;
 
     try {
-        const response = await fetch(
+        const response = await proxyFetch(
             `${BACKAPI_BASE}/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`,
             { signal: state.controller.signal }
         );
@@ -273,7 +233,7 @@ async function searchApps(query, isLoadMore = false) {
         if (error.name !== 'AbortError') {
             console.error('Error searching apps:', error);
             if (!isLoadMore && query === state.query) {
-                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', 'Проверьте интернет-соединение');
+                ModalManager.showError('searchResults', 'Не удалось подключиться к серверу', 'Проверьте интернет-соединение или работу прокси-сервера.');
             }
         }
     } finally {
@@ -282,9 +242,8 @@ async function searchApps(query, isLoadMore = false) {
 }
 
 // ============================================================
-//  СОЗДАНИЕ КАРТОЧКИ ПРИЛОЖЕНИЯ
+//  КАРТОЧКА ПРИЛОЖЕНИЯ (без изменений)
 // ============================================================
-
 function createAppCard(appDetails, app) {
     const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
     const iconUrl = escapeHtml(appDetails.iconUrl || '');
@@ -351,7 +310,6 @@ function createAppCard(appDetails, app) {
         </div>
     `;
 
-    // Привязка событий
     card.querySelector('.comments-toggle')?.addEventListener('click', (e) => {
         const pkg = e.currentTarget.getAttribute('data-package');
         showComments(pkg, 0, true);
@@ -377,12 +335,8 @@ function createAppCard(appDetails, app) {
 }
 
 // ============================================================
-//  СКАЧИВАНИЕ APK (официальное API)
+//  СКАЧИВАНИЕ APK
 // ============================================================
-// Использует POST /public/v1/application/{appId}/download-link
-// Документация: https://www.rustore.ru/help/work-with-rustore-api/api-upload-publication-app/get-download-link
-// ============================================================
-
 async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
@@ -406,7 +360,7 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
         }
 
         // Пробуем официальное API
-        let response = await fetch(`${API_BASE}/application/${appId}/download-link`, {
+        let response = await proxyFetch(`${API_BASE}/application/${appId}/download-link`, {
             method: 'POST',
             headers,
             body: JSON.stringify({
@@ -423,10 +377,10 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
 
         let data = await response.json();
 
-        // Если официальное API не работает – fallback на backapi
+        // Fallback на backapi
         if (data.code !== 'OK' || !data.body?.downloadUrls?.length) {
             console.warn('Official API failed, trying fallback...');
-            response = await fetch(`${BACKAPI_BASE}/applicationData/v2/download-link`, {
+            response = await proxyFetch(`${BACKAPI_BASE}/applicationData/v2/download-link`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -506,24 +460,19 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
 }
 
 // ============================================================
-//  ИСТОРИЯ ВЕРСИЙ (официальное API)
+//  ИСТОРИЯ ВЕРСИЙ
 // ============================================================
-// Использует GET /public/v1/application/{appId}/version
-// ============================================================
-
 async function showVersionHistory(appId) {
     ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4">Загрузка...</div>');
     try {
         const headers = {};
-        if (PUBLIC_TOKEN) {
-            headers['Public-Token'] = PUBLIC_TOKEN;
-        }
-        let response = await fetch(`${API_BASE}/application/${appId}/version`, { headers });
+        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
+
+        let response = await proxyFetch(`${API_BASE}/application/${appId}/version`, { headers });
         let data = await response.json();
 
-        // fallback на backapi
         if (data.code !== 'OK' || !data.body?.content?.length) {
-            response = await fetch(`${BACKAPI_BASE}/applicationData/allAppVersionWhatsNew/${appId}`);
+            response = await proxyFetch(`${BACKAPI_BASE}/applicationData/allAppVersionWhatsNew/${appId}`);
             data = await response.json();
         }
 
@@ -551,10 +500,6 @@ async function showVersionHistory(appId) {
     }
 }
 
-// ============================================================
-//  ОПИСАНИЕ
-// ============================================================
-
 function showDescription(appName, description) {
     const modal = document.getElementById('descriptionModal');
     const content = document.getElementById('descriptionContent');
@@ -566,11 +511,8 @@ function showDescription(appName, description) {
 }
 
 // ============================================================
-//  ОТЗЫВЫ (официальное API)
+//  ОТЗЫВЫ
 // ============================================================
-// Использует GET /public/v1/application/{packageName}/comment
-// ============================================================
-
 async function showComments(packageName, pageNumber, firstOpen) {
     const modal = document.getElementById('commentsModal');
     const header = document.getElementById('appCommentsHeader');
@@ -593,19 +535,16 @@ async function showComments(packageName, pageNumber, firstOpen) {
     try {
         const filter = filterSelect.value;
         const headers = {};
-        if (PUBLIC_TOKEN) {
-            headers['Public-Token'] = PUBLIC_TOKEN;
-        }
+        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
 
-        let response = await fetch(
+        let response = await proxyFetch(
             `${API_BASE}/application/${packageName}/comment?sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`,
             { headers }
         );
         let data = await response.json();
 
-        // fallback на backapi
         if (data.code !== 'OK' || !data.body?.content?.length) {
-            response = await fetch(
+            response = await proxyFetch(
                 `${BACKAPI_BASE}/comment/comment?packageName=${packageName}&sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`
             );
             data = await response.json();
@@ -639,7 +578,6 @@ async function showComments(packageName, pageNumber, firstOpen) {
 // ============================================================
 //  ПРЕДПРОСМОТР ИЗОБРАЖЕНИЙ
 // ============================================================
-
 function openPreview(imageUrl, event) {
     const modal = document.getElementById('imagePreviewModal');
     const card = event.target.closest('.app-card');
@@ -680,7 +618,6 @@ function closeImagePreview() {
 // ============================================================
 //  ПОИСК ПО ССЫЛКЕ
 // ============================================================
-
 async function searchByUrl() {
     const urlInput = document.getElementById('urlInput');
     const url = urlInput.value.trim();
@@ -714,7 +651,6 @@ async function searchByUrl() {
 // ============================================================
 //  ИНИЦИАЛИЗАЦИЯ
 // ============================================================
-
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');
@@ -742,7 +678,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
-    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -767,7 +702,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Бесконечная прокрутка
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

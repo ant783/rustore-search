@@ -1,13 +1,4 @@
-const PUBLIC_TOKEN = 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDcXpsiYMHtPB4PgcSDqxSYxBPHMJ8whhux7OWbRVmu6Mpl34bFWJOiqmXQTxlGjOIJTSdFTN0HGqJ1Fd59ctG/o4C8jeJhJbKOWFw2gmBy942cuMEGaMYhlQJDVXD2sYgfYReRUlD7pYUsfRh1dVn6Db6OAc4BWGCF1d6naPrJ5RfMNfyQEJzD1+J16ZEman/jHk8sCu0NqxcitG3oZ1V8fyyWLehrVRsuRMAW4B9leAolwaFEFFmqLHZh9H8v5hxM+mw9t7m2DkV/3M0OCMVqASdOjc492BPju8tJTG7e7eISFMv409Kp8QfC7AxTqtb2KOPFGMMe43gA/Y9lvKnZAgMBAAECggEAGwU3oOS7yo6tQen/skRTI3MhWLJnxn+fHDcnpR0BBN8S2CBrCj4U5iReFQdp2jpyicDt0IO+8zzLEC+1Bu1B9i1CXvxHtnE0nlsLvXxJfrdHZCDMPDCzIJGAhEiQ8BKvFefmB6HP/7cZJ+4Txm0z8eLnC0sB2yzesvJZGW5YF9KW0yBZNUmlyzgLzsOcyIKIs5HVF10mEEYHo2iUWnma6aQd/0PfYvxL3e1O3RZtOeJH69Zjs3fUKCBywuei5EH6RHzEq5QMyg5Eze+VIzomg8i+EHzsB/4RCs00fn7wvK7oCzEumPjoT+F5AZHEf78TZTbgHE5n6VONy/J5ZoHfvQKBgQDq/0eP/e/ijwFBCLrf4xoaunpU+FGKZiQf65TX/sEZouL6i4y/IYrCzaI431CR7b6gRO7rvCZcB9USNcIAHoM613bxtkkItoLUqoT4U5nuGGzWEiypcQYK0nwSF1T+1pomKgx0r+3xI0wsgi/JVRHN1/d/KJz/93u/GWAetNZ9tQKBgQDwEKWutfz7AlNDx3AH63bngD96MRqsRZwbJQ2cCyYjR6ta9VxaFzfyuoP/002xYJRYcLrk8I6hAGPFhLFsdV4d/2Rtp8z6cVB+HpRVkQx3B/K7dTKvzj4y7rkpzCzvYzA+zmdlGRyB+9K+NpqaF8VaYKW1+Enl72BsR3VBs5syFQKBgQDNBUURCjI0jiFA9PXdCMyojxLVeQPi5DQWKTllrJwZ2rN+dSupQQFH7ZHfXm1zs2EBgMKVpkQtPKQXTBFiezxwpLTgMvHLCThhhBeYc4+zW1nw9lBC0Bm+bV7Thcmgv+gi7cKKN0c3f10g47//PhnXZdlG9k7rPqaW1fO3Nnx/lQKBgQC3N91bpCW55SJrXnFQehM7yBOqTIPQ6yejR/pFF/U5g99yAkVDtOjMZjGMNFbdg5p0jUT2qeoRUtzSyN0oq8LzHhIl5qV4lrcaKniHfbaHuhc1ntLafovWD4BeOCgrZAZUSO98p1eslOdYqRABfxbuTUjrwt2TkciDm14QkOVnqQKBgHhdALK6v0unqGntrdx3iFkh14B02/8MwBAWDCc7qdpzaa75DYbcfEZOg/zXKeBltf0BP+h1vh2jzVM0LccGbvn9TUP2XzLDBX/c+B+WnM6ePn6ewZ+hKMwWyQgbyW4LPHY9nqYR53M2jx70do6xzxJtqOylhL7OenyoqRJS8Y7W';
-
-// Базовые URL API
-const API_BASE = 'https://public-api.rustore.ru/public/v1';
-const BACKAPI_BASE = 'https://backapi.rustore.ru';
-
-// ============================================================
-//  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-// ============================================================
-
+// Android SDK version mapping
 const sdkVersions = {
     1: '1.0', 2: '1.1', 3: '1.5', 4: '1.6', 5: '2.0', 6: '2.0.1',
     7: '2.1', 8: '2.2', 9: '2.3', 10: '2.3.3', 11: '3.0', 12: '3.1',
@@ -48,10 +39,7 @@ const createRatingStars = rating => {
     ).join('');
 };
 
-// ============================================================
-//  MODAL MANAGER
-// ============================================================
-
+// Modal Manager
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -85,10 +73,7 @@ const ModalManager = {
     }
 };
 
-// ============================================================
-//  STATE
-// ============================================================
-
+// State
 const state = {
     controller: null,
     page: 0,
@@ -105,48 +90,25 @@ const state = {
     }
 };
 
-// ============================================================
-//  API ФУНКЦИИ (ПРЯМЫЕ ЗАПРОСЫ)
-// ============================================================
-
+// API functions
 async function fetchAppDetails(packageName, { signal } = {}) {
     try {
-        const headers = {};
-        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
-        const response = await fetch(`${API_BASE}/application/${packageName}`, { signal, headers });
+        const response = await fetch(`https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`, { signal });
         const data = await response.json();
         return data.code === 'OK' && data.body ? data.body : null;
     } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.warn('Official API failed, using fallback:', error);
-            try {
-                const fallback = await fetch(`${BACKAPI_BASE}/applicationData/overallInfo/${packageName}`, { signal });
-                const data = await fallback.json();
-                return data.code === 'OK' && data.body ? data.body : null;
-            } catch (e) {
-                if (e.name !== 'AbortError') console.error('Fallback error:', e);
-                return null;
-            }
-        }
+        if (error.name !== 'AbortError') console.error('Error fetching app details:', error);
         return null;
     }
 }
 
 async function fetchAppRating(packageName) {
     try {
-        const headers = {};
-        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
-        const response = await fetch(`${API_BASE}/application/${packageName}/rating`, { headers });
+        const response = await fetch(`https://backapi.rustore.ru/applicationData/rating/${packageName}`);
         const data = await response.json();
         return data.code === 'OK' && data.body ? data.body : null;
     } catch {
-        try {
-            const fallback = await fetch(`${BACKAPI_BASE}/applicationData/rating/${packageName}`);
-            const data = await fallback.json();
-            return data.code === 'OK' && data.body ? data.body : null;
-        } catch {
-            return null;
-        }
+        return null;
     }
 }
 
@@ -164,16 +126,14 @@ function extractPackageNameFromUrl(url) {
     }
 }
 
-// ============================================================
-//  ПОИСК ПРИЛОЖЕНИЙ (через backapi, т.к. в официальном нет)
-// ============================================================
-
+// Поиск приложений
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
         state.query = query;
         state.isLoading = false;
     }
+
     if (!query.trim() || state.isLoading || !state.hasMorePages) return;
 
     const resultsContainer = document.getElementById('searchResults');
@@ -187,7 +147,7 @@ async function searchApps(query, isLoadMore = false) {
 
     try {
         const response = await fetch(
-            `${BACKAPI_BASE}/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`,
+            `https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`,
             { signal: state.controller.signal }
         );
         const data = await response.json();
@@ -231,10 +191,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ============================================================
-//  СОЗДАНИЕ КАРТОЧКИ ПРИЛОЖЕНИЯ
-// ============================================================
-
+// Создание карточки приложения
 function createAppCard(appDetails, app) {
     const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
     const iconUrl = escapeHtml(appDetails.iconUrl || '');
@@ -301,6 +258,7 @@ function createAppCard(appDetails, app) {
         </div>
     `;
 
+    // Привязка событий
     card.querySelector('.comments-toggle')?.addEventListener('click', (e) => {
         const pkg = e.currentTarget.getAttribute('data-package');
         showComments(pkg, 0, true);
@@ -325,15 +283,13 @@ function createAppCard(appDetails, app) {
     return card;
 }
 
-// ============================================================
-//  СКАЧИВАНИЕ APK
-// ============================================================
-
+// Функция скачивания APK с подсказкой для сохранения с нужным именем
 async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
     if (!container) return;
 
+    // Санитизация имени файла для отображения
     const sanitizeFileName = (name) => {
         return name
             .replace(/[\\/*?:"<>|]/g, '_')
@@ -346,14 +302,11 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
 
     try {
         const density = options.screenDensity || 320;
-        const headers = { 'Content-Type': 'application/json' };
-        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
-
-        // Пробуем официальное API
-        let response = await fetch(`${API_BASE}/application/${appId}/download-link`, {
+        const response = await fetch('https://backapi.rustore.ru/applicationData/v2/download-link', {
             method: 'POST',
-            headers,
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                appId,
                 firstInstall: true,
                 mobileServices: [],
                 supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
@@ -364,30 +317,7 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
                 signatureFingerprint: null
             })
         });
-
-        let data = await response.json();
-
-        // Fallback на backapi
-        if (data.code !== 'OK' || !data.body?.downloadUrls?.length) {
-            console.warn('Official download API failed, trying fallback...');
-            response = await fetch(`${BACKAPI_BASE}/applicationData/v2/download-link`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    appId,
-                    firstInstall: true,
-                    mobileServices: [],
-                    supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
-                    screenDensity: density,
-                    supportedLocales: ['ru_RU'],
-                    sdkVersion,
-                    withoutSplits: false,
-                    signatureFingerprint: null
-                })
-            });
-            data = await response.json();
-        }
-
+        const data = await response.json();
         if (data.code === 'OK' && data.body?.downloadUrls?.length) {
             const urls = data.body.downloadUrls;
             container.innerHTML = `
@@ -431,6 +361,7 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
                 </div>
             `;
 
+            // Копирование команд
             document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
                 const cmd = `curl -L -o "${suggestedFileName}" "${urls[0].url}"`;
                 await navigator.clipboard.writeText(cmd);
@@ -449,24 +380,12 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
     }
 }
 
-// ============================================================
-//  ИСТОРИЯ ВЕРСИЙ
-// ============================================================
-
+// История версий
 async function showVersionHistory(appId) {
     ModalManager.show('versionModal', 'versionHistory', '<div class="text-center p-4">Загрузка...</div>');
     try {
-        const headers = {};
-        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
-
-        let response = await fetch(`${API_BASE}/application/${appId}/version`, { headers });
-        let data = await response.json();
-
-        if (data.code !== 'OK' || !data.body?.content?.length) {
-            response = await fetch(`${BACKAPI_BASE}/applicationData/allAppVersionWhatsNew/${appId}`);
-            data = await response.json();
-        }
-
+        const response = await fetch(`https://backapi.rustore.ru/applicationData/allAppVersionWhatsNew/${appId}`);
+        const data = await response.json();
         if (data.code === 'OK' && data.body) {
             const versions = data.body.content;
             const container = document.getElementById('versionHistory');
@@ -491,10 +410,6 @@ async function showVersionHistory(appId) {
     }
 }
 
-// ============================================================
-//  ОПИСАНИЕ
-// ============================================================
-
 function showDescription(appName, description) {
     const modal = document.getElementById('descriptionModal');
     const content = document.getElementById('descriptionContent');
@@ -504,10 +419,6 @@ function showDescription(appName, description) {
     modal.classList.remove('hidden');
     modal.classList.add('show');
 }
-
-// ============================================================
-//  ОТЗЫВЫ
-// ============================================================
 
 async function showComments(packageName, pageNumber, firstOpen) {
     const modal = document.getElementById('commentsModal');
@@ -530,22 +441,8 @@ async function showComments(packageName, pageNumber, firstOpen) {
 
     try {
         const filter = filterSelect.value;
-        const headers = {};
-        if (PUBLIC_TOKEN) headers['Public-Token'] = PUBLIC_TOKEN;
-
-        let response = await fetch(
-            `${API_BASE}/application/${packageName}/comment?sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`,
-            { headers }
-        );
-        let data = await response.json();
-
-        if (data.code !== 'OK' || !data.body?.content?.length) {
-            response = await fetch(
-                `${BACKAPI_BASE}/comment/comment?packageName=${packageName}&sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`
-            );
-            data = await response.json();
-        }
-
+        const resp = await fetch(`https://backapi.rustore.ru/comment/comment?packageName=${packageName}&sortBy=${filter}&pageNumber=${pageNumber}&pageSize=20`);
+        const data = await resp.json();
         if (data.code === 'OK' && data.body) {
             const comments = data.body.content || [];
             const html = comments.map(c => `
@@ -571,10 +468,7 @@ async function showComments(packageName, pageNumber, firstOpen) {
     }
 }
 
-// ============================================================
-//  ПРЕДПРОСМОТР ИЗОБРАЖЕНИЙ
-// ============================================================
-
+// Предпросмотр изображений
 function openPreview(imageUrl, event) {
     const modal = document.getElementById('imagePreviewModal');
     const card = event.target.closest('.app-card');
@@ -612,10 +506,7 @@ function closeImagePreview() {
     state.imageIndex = 0;
 }
 
-// ============================================================
-//  ПОИСК ПО ССЫЛКЕ
-// ============================================================
-
+// Поиск по ссылке
 async function searchByUrl() {
     const urlInput = document.getElementById('urlInput');
     const url = urlInput.value.trim();
@@ -646,10 +537,7 @@ async function searchByUrl() {
     }
 }
 
-// ============================================================
-//  ИНИЦИАЛИЗАЦИЯ
-// ============================================================
-
+// Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');
@@ -677,6 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
+    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -701,6 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Бесконечная прокрутка
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

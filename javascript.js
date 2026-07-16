@@ -1,3 +1,11 @@
+// ============================================================
+//  ПОЛНАЯ ВЕРСИЯ ДЛЯ UPTODOWN (без прокси, с таймаутами)
+// ============================================================
+
+// ---- Константы таймаутов (в миллисекундах) ----
+const TIMEOUT_SEARCH = 15000;      // 15 секунд на поиск
+const TIMEOUT_DOWNLOAD = 20000;    // 20 секунд на получение страницы скачивания
+
 // ---- Вспомогательные функции ----
 const formatFileSize = bytes => {
     if (bytes === 0) return '0 Bytes';
@@ -76,7 +84,7 @@ const state = {
 };
 
 // ============================================================
-//  ПОИСК НА UPTODOWN (прямой запрос)
+//  ПОИСК НА UPTODOWN (с таймаутом)
 // ============================================================
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
@@ -96,14 +104,22 @@ async function searchApps(query, isLoadMore = false) {
 
     state.isLoading = true;
 
+    // Создаём отдельный AbortController для таймаута
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+        abortController.abort();
+        console.log('Запрос поиска отменён по таймауту');
+    }, TIMEOUT_SEARCH);
+
     try {
         const url = `https://ru.uptodown.com/search?q=${encodeURIComponent(query.trim())}&page=${state.page}`;
         const response = await fetch(url, {
-            signal: state.controller.signal,
+            signal: abortController.signal,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -131,7 +147,7 @@ async function searchApps(query, isLoadMore = false) {
         for (const card of cards) {
             if (query !== state.query) return;
 
-            // Ищем ссылку на страницу приложения
+            // Ссылка на страницу приложения
             const linkEl = card.querySelector('a[href*="/android/"]');
             if (!linkEl) continue;
             const appUrl = 'https://ru.uptodown.com' + linkEl.getAttribute('href');
@@ -173,7 +189,13 @@ async function searchApps(query, isLoadMore = false) {
         state.page++;
 
     } catch (error) {
-        if (error.name !== 'AbortError') {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.warn('Запрос поиска отменён по таймауту');
+            if (!isLoadMore && query === state.query) {
+                ModalManager.showError('searchResults', 'Превышено время ожидания', 'Сервер не отвечает, попробуйте позже');
+            }
+        } else if (error.name !== 'AbortError') {
             console.error('Error searching apps:', error);
             if (!isLoadMore && query === state.query) {
                 let userMessage = 'Проверьте интернет-соединение и отключите блокировку CORS (используйте расширение).';
@@ -185,6 +207,7 @@ async function searchApps(query, isLoadMore = false) {
         }
     } finally {
         if (query === state.query) state.isLoading = false;
+        clearTimeout(timeoutId);
     }
 }
 
@@ -226,18 +249,29 @@ function createAppCard(appData) {
     return card;
 }
 
-// Скачивание APK (прямой запрос к странице приложения)
+// ============================================================
+//  СКАЧИВАНИЕ APK (с таймаутом)
+// ============================================================
 async function downloadApp(appUrl, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
     if (!container) return;
 
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+        abortController.abort();
+        console.log('Запрос скачивания отменён по таймауту');
+    }, TIMEOUT_DOWNLOAD);
+
     try {
         const response = await fetch(appUrl, {
+            signal: abortController.signal,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -249,7 +283,7 @@ async function downloadApp(appUrl, appName) {
 
         // Поиск ссылки на APK
         // 1. Кнопка с data-url
-        const btn = doc.querySelector('.download-button[data-url]') || 
+        const btn = doc.querySelector('.download-button[data-url]') ||
                     doc.querySelector('a[data-url*=".apk"]') ||
                     doc.querySelector('a[href*=".apk"]');
         if (btn) {
@@ -332,11 +366,20 @@ async function downloadApp(appUrl, appName) {
         });
 
     } catch (error) {
-        container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            container.innerHTML = '<div class="text-red-600">Превышено время ожидания ответа от сервера</div>';
+        } else {
+            container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
+        }
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
-// Остальные функции (заглушки)
+// ============================================================
+//  ЗАГЛУШКИ ДЛЯ НЕИСПОЛЬЗУЕМЫХ ФУНКЦИЙ
+// ============================================================
 function showDescription(appName, description) {
     alert('Описание доступно только на сайте Uptodown. Откройте страницу приложения.');
 }
@@ -357,7 +400,9 @@ function openPreview(imageUrl, event) { /* не используется */ }
 function closeImagePreview() { /* не используется */ }
 function navigateImage(dir) { /* не используется */ }
 
-// Инициализация
+// ============================================================
+//  ИНИЦИАЛИЗАЦИЯ
+// ============================================================
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
     const clearSearch = document.getElementById('clearSearch');

@@ -1,6 +1,6 @@
 // ============================================================
-//  RuStore через парсинг HTML (без прокси)
-//  Требуется отключение CORS в браузере (расширение или флаг)
+//  RuStore через парсинг встроенного JSON (без прокси)
+//  Требуется отключение CORS (расширение или флаг браузера)
 // ============================================================
 
 const TIMEOUT_SEARCH = 15000;
@@ -99,9 +99,21 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ============================================================
-//  ПОИСК (парсинг страницы поиска RuStore)
-// ============================================================
+// ---- Извлечение данных из __NEXT_DATA__ ----
+function extractDataFromNextScript(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const script = doc.querySelector('script#__NEXT_DATA__');
+    if (!script) return null;
+    try {
+        return JSON.parse(script.textContent);
+    } catch (e) {
+        console.error('Ошибка парсинга __NEXT_DATA__:', e);
+        return null;
+    }
+}
+
+// ---- Поиск через JSON-данные ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -126,17 +138,45 @@ async function searchApps(query, isLoadMore = false) {
         const html = await response.text();
         if (query !== state.query) return;
 
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
+        const jsonData = extractDataFromNextScript(html);
+        if (!jsonData) {
+            // Если JSON не найден, пробуем парсить DOM (запасной вариант)
+            await fallbackDomSearch(html, resultsContainer, query);
+            return;
+        }
 
-        // Пытаемся найти карточки приложений (актуальные селекторы на 2026 год)
-        let items = doc.querySelectorAll('[data-testid="search-result-item"]');
-        if (!items.length) items = doc.querySelectorAll('.SearchResult_item');
-        if (!items.length) items = doc.querySelectorAll('.catalog-item');
-        if (!items.length) items = doc.querySelectorAll('.app-card');
-        if (!items.length) items = doc.querySelectorAll('.product-card');
+        // Ищем массив приложений в JSON-структуре (обычно в props.pageProps.initialState.search.results)
+        let apps = null;
+        try {
+            // Пути могут меняться, пробуем разные варианты
+            const state = jsonData.props?.pageProps?.initialState || jsonData.props?.pageProps?.state || jsonData.props?.initialState;
+            if (state?.search?.results) {
+                apps = state.search.results;
+            } else if (state?.catalog?.items) {
+                apps = state.catalog.items;
+            } else if (state?.apps) {
+                apps = state.apps;
+            } else {
+                // Ищем в любом объекте ключи, содержащие массив с appId
+                const searchInObject = (obj) => {
+                    for (const key in obj) {
+                        if (Array.isArray(obj[key]) && obj[key].length > 0 && obj[key][0].appId) {
+                            return obj[key];
+                        }
+                        if (typeof obj[key] === 'object' && obj[key] !== null) {
+                            const result = searchInObject(obj[key]);
+                            if (result) return result;
+                        }
+                    }
+                    return null;
+                };
+                apps = searchInObject(state || jsonData);
+            }
+        } catch (e) {
+            console.warn('Не удалось извлечь приложения из JSON', e);
+        }
 
-        if (!items.length) {
+        if (!apps || !apps.length) {
             if (!isLoadMore) {
                 resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
             }
@@ -146,42 +186,38 @@ async function searchApps(query, isLoadMore = false) {
 
         if (!isLoadMore) resultsContainer.innerHTML = '';
 
-        for (const item of items) {
+        for (const app of apps) {
             if (query !== state.query) return;
 
-            const link = item.querySelector('a[href*="/app/"]');
-            if (!link) continue;
-            const appUrl = 'https://www.rustore.ru' + link.getAttribute('href');
+            // Извлекаем данные из объекта приложения (адаптируйте под реальную структуру)
+            const appName = app.appName || app.name || app.title || 'Unknown';
+            const iconUrl = app.iconUrl || app.icon || app.image || '';
+            const shortDesc = app.shortDescription || app.description || app.subtitle || '';
+            const rating = app.averageUserRating || app.rating || 0;
+            const packageName = app.packageName || app.package || app.appId || '';
+            const appUrl = `https://www.rustore.ru/app/${packageName}`;
 
-            const nameEl = item.querySelector('.app-name') || item.querySelector('h3') || item.querySelector('.title');
-            const appName = nameEl ? nameEl.textContent.trim() : 'Unknown';
-
-            const iconEl = item.querySelector('img[src*="icon"]') || item.querySelector('img');
-            const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
-
-            const ratingEl = item.querySelector('.rating-value') || item.querySelector('.stars');
-            let rating = 0;
-            if (ratingEl) {
-                const match = ratingEl.textContent.match(/(\d+(\.\d+)?)/);
-                if (match) rating = parseFloat(match[0]);
-            }
-
-            const descEl = item.querySelector('.description') || item.querySelector('.short-description');
-            const shortDesc = descEl ? descEl.textContent.trim() : '';
+            // Если есть прямая ссылка, используем её
+            const link = app.url || app.link || appUrl;
 
             const appData = {
                 appName,
                 iconUrl,
                 shortDescription: shortDesc,
-                appUrl,
+                appUrl: link,
                 rating,
-                packageName: appUrl.split('/').pop() || appName
+                packageName
             };
             resultsContainer.appendChild(createAppCard(appData));
         }
 
-        const nextBtn = doc.querySelector('a[rel="next"]') || doc.querySelector('.pagination-next:not(.disabled)');
-        state.hasMorePages = !!nextBtn;
+        // Проверяем наличие следующей страницы (может быть в JSON)
+        let hasNext = false;
+        try {
+            const state = jsonData.props?.pageProps?.initialState || jsonData.props?.pageProps?.state || jsonData.props?.initialState;
+            hasNext = state?.search?.hasNextPage || state?.catalog?.hasNextPage || false;
+        } catch (e) {}
+        state.hasMorePages = hasNext;
         state.page++;
 
     } catch (error) {
@@ -197,7 +233,57 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки ----
+// ---- Запасной парсинг DOM (если JSON не найден) ----
+async function fallbackDomSearch(html, container, query) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Ищем все ссылки на приложения
+    const links = doc.querySelectorAll('a[href^="/app/"]');
+    if (!links.length) {
+        container.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
+        state.hasMorePages = false;
+        return;
+    }
+
+    container.innerHTML = '';
+    const processed = new Set();
+    for (const link of links) {
+        if (query !== state.query) return;
+
+        let card = link.closest('.SearchResult_item') || 
+                   link.closest('.catalog-item') || 
+                   link.closest('.app-card') || 
+                   link.closest('.product-card') ||
+                   link.closest('[data-testid="search-result-item"]') ||
+                   link.parentElement.parentElement;
+        if (!card) continue;
+        if (processed.has(card)) continue;
+        processed.add(card);
+
+        const appUrl = 'https://www.rustore.ru' + link.getAttribute('href');
+        const nameEl = card.querySelector('h3') || card.querySelector('.name') || card.querySelector('.title') || card.querySelector('.app-name');
+        const appName = nameEl ? nameEl.textContent.trim() : 'Unknown';
+        const iconEl = card.querySelector('img[src*="icon"]') || card.querySelector('img');
+        const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
+        const ratingEl = card.querySelector('.rating') || card.querySelector('.stars') || card.querySelector('[class*="rating"]');
+        let rating = 0;
+        if (ratingEl) {
+            const match = ratingEl.textContent.match(/(\d+(\.\d+)?)/);
+            if (match) rating = parseFloat(match[0]);
+        }
+        const descEl = card.querySelector('.description') || card.querySelector('.short-description') || card.querySelector('.subtitle');
+        const shortDesc = descEl ? descEl.textContent.trim() : '';
+        const packageName = appUrl.split('/').pop() || appName;
+
+        const appData = { appName, iconUrl, shortDescription: shortDesc, appUrl, rating, packageName };
+        container.appendChild(createAppCard(appData));
+    }
+    // Пагинация для DOM не поддерживается
+    state.hasMorePages = false;
+}
+
+// ---- Создание карточки (та же, что и раньше) ----
 function createAppCard(appData) {
     const { appName, iconUrl, shortDescription, appUrl, rating, packageName } = appData;
     const ratingStars = createRatingStars(rating);
@@ -235,9 +321,7 @@ function createAppCard(appData) {
     return card;
 }
 
-// ============================================================
-//  СКАЧИВАНИЕ APK (парсинг страницы приложения)
-// ============================================================
+// ---- Скачивание APK через __NEXT_DATA__ ----
 async function downloadApp(appUrl, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
@@ -248,41 +332,52 @@ async function downloadApp(appUrl, appName) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const html = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-
+        const jsonData = extractDataFromNextScript(html);
         let downloadLink = null;
 
-        // 1. Ищем кнопку или ссылку с data-url или href на .apk
-        const btn = doc.querySelector('[data-url*=".apk"]') || 
-                    doc.querySelector('a[href*=".apk"]') ||
-                    doc.querySelector('.download-button[data-url]');
-        if (btn) {
-            downloadLink = btn.getAttribute('data-url') || btn.getAttribute('href');
-        }
-
-        // 2. Ищем в JSON-данных внутри скриптов
-        if (!downloadLink) {
-            const scripts = doc.querySelectorAll('script');
-            for (const script of scripts) {
-                if (script.textContent.includes('"downloadUrl"')) {
-                    const match = script.textContent.match(/"downloadUrl"\s*:\s*"([^"]+)"/);
-                    if (match) {
-                        downloadLink = match[1];
-                        break;
-                    }
+        if (jsonData) {
+            // Ищем ссылку в JSON (часто в props.pageProps.app.downloadUrl или подобном)
+            try {
+                const state = jsonData.props?.pageProps?.initialState || jsonData.props?.pageProps?.state || jsonData.props?.initialState;
+                if (state?.app?.downloadUrl) downloadLink = state.app.downloadUrl;
+                else if (state?.app?.downloadLink) downloadLink = state.app.downloadLink;
+                else if (state?.app?.fileUrl) downloadLink = state.app.fileUrl;
+                else {
+                    // Ищем в любом объекте ключ с 'downloadUrl'
+                    const search = (obj) => {
+                        for (const key in obj) {
+                            if (typeof obj[key] === 'string' && (key.toLowerCase().includes('download') || key.toLowerCase().includes('apk'))) {
+                                if (obj[key].startsWith('http') && obj[key].includes('.apk')) {
+                                    return obj[key];
+                                }
+                            }
+                            if (typeof obj[key] === 'object' && obj[key] !== null) {
+                                const result = search(obj[key]);
+                                if (result) return result;
+                            }
+                        }
+                        return null;
+                    };
+                    downloadLink = search(state || jsonData);
                 }
+            } catch (e) {
+                console.warn('Не удалось извлечь ссылку из JSON', e);
             }
         }
 
-        // 3. Мета-теги (редко)
+        // Если JSON не помог, ищем в DOM
         if (!downloadLink) {
-            const meta = doc.querySelector('meta[property="og:video"]');
-            if (meta) downloadLink = meta.getAttribute('content');
-        }
-
-        if (downloadLink && downloadLink.startsWith('/')) {
-            downloadLink = 'https://www.rustore.ru' + downloadLink;
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const btn = doc.querySelector('[data-url*=".apk"]') || 
+                        doc.querySelector('a[href*=".apk"]') ||
+                        doc.querySelector('.download-button[data-url]');
+            if (btn) {
+                downloadLink = btn.getAttribute('data-url') || btn.getAttribute('href');
+            }
+            if (downloadLink && downloadLink.startsWith('/')) {
+                downloadLink = 'https://www.rustore.ru' + downloadLink;
+            }
         }
 
         if (!downloadLink) {

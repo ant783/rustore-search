@@ -1,4 +1,3 @@
-const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
 // ---- Таймауты ----
 const TIMEOUT_SEARCH = 15000;

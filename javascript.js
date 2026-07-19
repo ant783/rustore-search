@@ -1,5 +1,5 @@
 // ============================================================
-//  Uptodown – поиск и скачивание APK (парсинг HTML)
+//  RuStore API (с обязательным заголовком ruStoreVerCode)
 //  Требуется отключение CORS (расширение или флаг браузера)
 // ============================================================
 
@@ -26,6 +26,13 @@ const createRatingStars = rating => {
         (i === fullStars && hasHalfStar) ? '<span class="rating-star">⯪</span>' :
         '<span class="text-gray-300">★</span>'
     ).join('');
+};
+
+const formatFileSize = bytes => {
+    if (bytes === 0) return '0 Bytes';
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 };
 
 // ---- Modal Manager ----
@@ -77,7 +84,11 @@ const state = {
     }
 };
 
-// ---- Универсальный fetch с таймаутом ----
+// ============================================================
+//  ОСНОВНЫЕ ФУНКЦИИ РАБОТЫ С API
+// ============================================================
+
+// ---- Универсальный fetch с таймаутом и заголовками ----
 async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -86,8 +97,9 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
             ...options,
             signal: controller.signal,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Content-Type': 'application/json; charset=utf-8',
+                'ruStoreVerCode': '247', // Обязательный заголовок!
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 ...(options.headers || {})
             }
         });
@@ -99,7 +111,26 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Поиск на Uptodown ----
+// ---- Получение детальной информации о приложении ----
+async function fetchAppDetails(packageName, { signal } = {}) {
+    try {
+        const url = `https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`;
+        const response = await fetchWithTimeout(url, { signal }, TIMEOUT_SEARCH);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (data.code === 'OK' && data.body) {
+            return data.body;
+        }
+        return null;
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Ошибка получения деталей приложения:', error);
+        }
+        return null;
+    }
+}
+
+// ---- Поиск приложений ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -117,95 +148,47 @@ async function searchApps(query, isLoadMore = false) {
 
     state.isLoading = true;
     try {
-        const url = `https://ru.uptodown.com/search?q=${encodeURIComponent(query.trim())}&page=${state.page}`;
-        const response = await fetchWithTimeout(url, {}, TIMEOUT_SEARCH);
+        const url = `https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`;
+        const response = await fetchWithTimeout(url, { signal: state.controller.signal }, TIMEOUT_SEARCH);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const html = await response.text();
+        
+        const data = await response.json();
         if (query !== state.query) return;
 
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
+        if (data.code === 'OK' && data.body) {
+            const results = data.body.content;
+            if (!isLoadMore) resultsContainer.innerHTML = '';
 
-        // Актуальные селекторы Uptodown (февраль 2026)
-        const cards = doc.querySelectorAll('.app-card');
-        if (!cards.length) {
-            // Запасной вариант
-            const fallback = doc.querySelectorAll('.search-result-item, .catalog-item, .card');
-            if (!fallback.length) {
+            if (!results || results.length === 0) {
                 if (!isLoadMore) {
                     resultsContainer.innerHTML = '<div class="col-span-full text-center p-4"><p class="text-gray-600">Приложения не найдены</p></div>';
                 }
                 state.hasMorePages = false;
                 return;
             }
-            // Если нашли по запасным, используем их
-            for (const item of fallback) {
+
+            for (const app of results) {
                 if (query !== state.query) return;
-                const link = item.querySelector('a[href*="/android/"]');
-                if (!link) continue;
-                const appUrl = 'https://ru.uptodown.com' + link.getAttribute('href');
-                const nameEl = item.querySelector('h3, .title, .app-name');
-                const appName = nameEl ? nameEl.textContent.trim() : 'Unknown';
-                const iconEl = item.querySelector('img');
-                const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
-                const descEl = item.querySelector('.description, .short-description');
-                const shortDesc = descEl ? descEl.textContent.trim() : '';
-                const ratingEl = item.querySelector('.rating-value, .stars');
-                let rating = 0;
-                if (ratingEl) {
-                    const match = ratingEl.textContent.match(/(\d+(\.\d+)?)/);
-                    if (match) rating = parseFloat(match[0]);
+                const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
+                if (appDetails && query === state.query) {
+                    resultsContainer.appendChild(createAppCard(appDetails, app));
                 }
-                const packageName = appUrl.split('/').pop() || appName;
-                const appData = { appName, iconUrl, shortDescription: shortDesc, appUrl, rating, packageName };
-                resultsContainer.appendChild(createAppCard(appData));
-            }
-            state.hasMorePages = false;
-            return;
-        }
-
-        // Основной путь – карточки с классом app-card
-        if (!isLoadMore) resultsContainer.innerHTML = '';
-
-        for (const card of cards) {
-            if (query !== state.query) return;
-
-            const link = card.querySelector('a[href*="/android/"]');
-            if (!link) continue;
-            const appUrl = 'https://ru.uptodown.com' + link.getAttribute('href');
-
-            const nameEl = card.querySelector('.app-card__name') || card.querySelector('h3') || card.querySelector('.title');
-            const appName = nameEl ? nameEl.textContent.trim() : 'Unknown';
-
-            const iconEl = card.querySelector('img[src*="icon"]') || card.querySelector('img');
-            const iconUrl = iconEl ? iconEl.getAttribute('src') : '';
-
-            const descEl = card.querySelector('.app-card__description') || card.querySelector('.description');
-            const shortDesc = descEl ? descEl.textContent.trim() : '';
-
-            const ratingEl = card.querySelector('.rating-value') || card.querySelector('.stars');
-            let rating = 0;
-            if (ratingEl) {
-                const match = ratingEl.textContent.match(/(\d+(\.\d+)?)/);
-                if (match) rating = parseFloat(match[0]);
             }
 
-            const packageName = appUrl.split('/').pop() || appName;
-            const appData = { appName, iconUrl, shortDescription: shortDesc, appUrl, rating, packageName };
-            resultsContainer.appendChild(createAppCard(appData));
+            state.hasMorePages = state.page < data.body.totalPages - 1;
+            state.page++;
+        } else {
+            throw new Error('API вернул ошибку');
         }
-
-        // Пагинация
-        const nextBtn = doc.querySelector('a[rel="next"]') || doc.querySelector('.pagination-next:not(.disabled)');
-        state.hasMorePages = !!nextBtn;
-        state.page++;
-
     } catch (error) {
         if (error.name !== 'AbortError') {
-            console.error(error);
+            console.error('Ошибка поиска:', error);
             if (!isLoadMore && query === state.query) {
-                ModalManager.showError('searchResults', 'Не удалось подключиться к Uptodown', 'Проверьте интернет и включите расширение CORS.');
+                let msg = 'Проверьте интернет-соединение и отключите CORS (расширение или флаг браузера).';
+                if (error.message.includes('403') || error.message.includes('401')) {
+                    msg = 'Ошибка авторизации. Возможно, требуется обновить заголовок ruStoreVerCode.';
+                }
+                ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', msg);
             }
         }
     } finally {
@@ -213,145 +196,190 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки ----
-function createAppCard(appData) {
-    const { appName, iconUrl, shortDescription, appUrl, rating, packageName } = appData;
+// ---- Создание карточки приложения ----
+function createAppCard(appDetails, app) {
+    const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
+    const iconUrl = escapeHtml(appDetails.iconUrl || '');
+    const appName = escapeHtml(appDetails.appName || '');
+    const packageName = escapeHtml(appDetails.packageName || '');
+    const shortDescription = escapeHtml(appDetails.shortDescription || '');
+    const appId = escapeHtml(String(appDetails.appId));
+    const versionCode = escapeHtml(String(appDetails.versionCode));
+    const fileSize = formatFileSize(appDetails.fileSize || 0);
+    const versionName = escapeHtml(appDetails.versionName || '');
+    const downloads = (appDetails.downloads || 0).toLocaleString();
+    const rating = app.averageUserRating || 0;
+    const totalRatings = (app.totalRatings || 0).toLocaleString();
     const ratingStars = createRatingStars(rating);
     const ratingValue = rating.toFixed(1);
+    const fullDescription = appDetails.fullDescription || '';
+    const descJson = JSON.stringify(fullDescription);
+
+    let screenshotsHtml = '';
+    for (const s of screenshots) {
+        const src = escapeHtml(s.fileUrl);
+        screenshotsHtml += `<img src="${src}" alt="Screenshot" class="w-40 cursor-pointer rounded shadow" onclick="openPreview('${src}', event)">`;
+    }
 
     const card = document.createElement('div');
     card.className = 'app-card p-4 flex flex-col justify-between h-full';
     card.innerHTML = `
         <div class="flex items-start gap-4">
-            <img src="${escapeHtml(iconUrl)}" alt="${escapeHtml(appName)}" class="w-20 h-20 rounded-lg" onerror="this.src='https://via.placeholder.com/80'">
+            <img src="${iconUrl}" alt="${appName}" class="w-20 h-20 rounded-lg" onerror="this.src='https://via.placeholder.com/80'">
             <div class="flex-1 flex flex-col min-w-0">
-                <h2 class="text-xl font-bold break-words">${escapeHtml(appName)}</h2>
-                <p class="text-gray-600 break-words text-sm" title="${escapeHtml(packageName)}">${escapeHtml(packageName)}</p>
+                <h2 class="text-xl font-bold break-words">${appName}</h2>
+                <p class="text-gray-600 break-words text-sm" title="${packageName}">${packageName}</p>
                 <div class="rating mt-2">
                     ${ratingStars}
                     ${ratingValue}
+                    <span class="text-sm text-gray-600">(${totalRatings})</span>
                 </div>
             </div>
         </div>
         <div class="mt-4">
-            <p class="text-gray-700 text-sm">${escapeHtml(shortDescription)}</p>
+            <p class="text-gray-700 text-sm">${shortDescription}</p>
+            <button class="description-toggle mt-2 text-blue-600 text-sm" data-name="${appName}" data-desc='${descJson}'>Показать полное описание</button>
+        </div>
+        ${screenshotsHtml ? `<div class="screenshots-container my-4 flex gap-2 overflow-x-auto">${screenshotsHtml}</div>` : ''}
+        <div class="grid grid-cols-2 gap-1 text-sm text-gray-600 mt-2">
+            <div>Версия: ${versionName}</div>
+            <div>Размер: ~${fileSize}</div>
+            <div>Загрузок: ${downloads}</div>
+            <div>App ID: ${appId}</div>
         </div>
         <div class="mt-4 flex justify-between items-center">
-            <button class="download-btn" data-appurl="${escapeHtml(appUrl)}" data-appname="${escapeHtml(appName)}">Скачать</button>
-            <span class="text-xs text-gray-500">Uptodown</span>
+            <button class="download-btn bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600" 
+                    data-appid="${appDetails.appId}" 
+                    data-sdk="${appDetails.minSdkVersion}" 
+                    data-appname="${appName}" 
+                    data-versionname="${versionName}">
+                Скачать APK
+            </button>
         </div>
     `;
 
+    // Привязка событий
+    card.querySelector('.description-toggle')?.addEventListener('click', (e) => {
+        const name = e.currentTarget.getAttribute('data-name');
+        const desc = e.currentTarget.getAttribute('data-desc');
+        showDescription(name, desc);
+    });
     card.querySelector('.download-btn')?.addEventListener('click', (e) => {
-        const appUrl = e.currentTarget.getAttribute('data-appurl');
+        const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
+        const sdk = parseInt(e.currentTarget.getAttribute('data-sdk'));
         const appName = e.currentTarget.getAttribute('data-appname');
-        downloadApp(appUrl, appName);
+        const versionName = e.currentTarget.getAttribute('data-versionname');
+        downloadApp(appId, sdk, appName, versionName);
     });
 
     return card;
 }
 
 // ---- Скачивание APK ----
-async function downloadApp(appUrl, appName) {
+async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
     if (!container) return;
 
+    const sanitizeFileName = (name) => {
+        return name.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_').trim();
+    };
+    const safeAppName = sanitizeFileName(appName || 'app');
+    const safeVersion = sanitizeFileName(versionName || 'unknown');
+    const suggestedFileName = `${safeAppName}_${safeVersion}.apk`;
+
     try {
-        const response = await fetchWithTimeout(appUrl, {}, TIMEOUT_DOWNLOAD);
+        const density = options.screenDensity || 320;
+        const url = 'https://backapi.rustore.ru/applicationData/v2/download-link';
+        const response = await fetchWithTimeout(url, {
+            method: 'POST',
+            body: JSON.stringify({
+                appId,
+                firstInstall: true,
+                mobileServices: [],
+                supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
+                screenDensity: density,
+                supportedLocales: ['ru_RU'],
+                sdkVersion,
+                withoutSplits: false,
+                signatureFingerprint: null
+            })
+        }, TIMEOUT_DOWNLOAD);
+
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
 
-        const html = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-
-        let downloadLink = null;
-
-        // Ищем кнопку или ссылку с data-url
-        const btn = doc.querySelector('.download-button[data-url]') || 
-                    doc.querySelector('a[data-url*=".apk"]') ||
-                    doc.querySelector('a[href*=".apk"]');
-        if (btn) {
-            downloadLink = btn.getAttribute('data-url') || btn.getAttribute('href');
-        }
-
-        // Если не нашли – ищем ссылку с текстом "Скачать"
-        if (!downloadLink) {
-            const links = doc.querySelectorAll('a');
-            for (const link of links) {
-                const text = link.textContent.toLowerCase();
-                if ((text.includes('скачать') || text.includes('descargar')) && link.href.includes('.apk')) {
-                    downloadLink = link.href;
-                    break;
-                }
-            }
-        }
-
-        if (downloadLink && downloadLink.startsWith('/')) {
-            downloadLink = 'https://ru.uptodown.com' + downloadLink;
-        }
-
-        if (!downloadLink) {
-            throw new Error('Не удалось найти ссылку на APK.');
-        }
-
-        const suggestedFileName = `${appName.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_')}.apk`;
-
-        container.innerHTML = `
-            <div class="space-y-3">
-                <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
-                    <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
-                    <div class="text-sm text-yellow-700 mt-1">
-                        Нажмите правой кнопкой по ссылке и выберите «Сохранить ссылку как…»<br>
-                        Имя файла: <strong>${escapeHtml(suggestedFileName)}</strong>
-                    </div>
-                </div>
-                <div class="font-semibold">Ссылка для скачивания:</div>
-                <div class="p-2 bg-gray-50 rounded break-all">
-                    <a href="${escapeHtml(downloadLink)}" target="_blank" class="text-blue-600 underline">${escapeHtml(downloadLink)}</a>
-                </div>
-                <div class="mt-4 p-3 bg-gray-100 rounded">
-                    <div class="font-semibold">Команды для загрузки:</div>
-                    <div class="mt-2">
-                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                            curl -L -o "${suggestedFileName}" "${escapeHtml(downloadLink)}"
+        if (data.code === 'OK' && data.body?.downloadUrls?.length) {
+            const urls = data.body.downloadUrls;
+            container.innerHTML = `
+                <div class="space-y-3">
+                    <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
+                        <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
+                        <div class="text-sm text-yellow-700 mt-1">
+                            Нажмите правой кнопкой по ссылке и выберите «Сохранить ссылку как…»<br>
+                            Имя файла: <strong>${escapeHtml(suggestedFileName)}</strong>
                         </div>
-                        <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
                     </div>
-                    <div class="mt-2">
-                        <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                            wget -O "${suggestedFileName}" "${escapeHtml(downloadLink)}"
+                    <div class="font-semibold">Ссылки для скачивания:</div>
+                    ${urls.map((u, idx) => `
+                        <div class="p-2 bg-gray-50 rounded break-all">
+                            <div class="text-sm text-gray-600 mb-1">Файл ${idx+1}</div>
+                            <a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 underline text-sm">${escapeHtml(u.url)}</a>
                         </div>
-                        <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
+                    `).join('')}
+                    <div class="mt-4 p-3 bg-gray-100 rounded">
+                        <div class="font-semibold">Команды для загрузки:</div>
+                        <div class="mt-2">
+                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
+                                curl -L -o "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
+                            </div>
+                            <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
+                        </div>
+                        <div class="mt-2">
+                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
+                                wget -O "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
+                            </div>
+                            <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
+            `;
 
-        document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(`curl -L -o "${suggestedFileName}" "${downloadLink}"`);
-            alert('Команда curl скопирована');
-        });
-        document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(`wget -O "${suggestedFileName}" "${downloadLink}"`);
-            alert('Команда wget скопирована');
-        });
-
+            document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
+                await navigator.clipboard.writeText(`curl -L -o "${suggestedFileName}" "${urls[0].url}"`);
+                alert('Команда curl скопирована');
+            });
+            document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
+                await navigator.clipboard.writeText(`wget -O "${suggestedFileName}" "${urls[0].url}"`);
+                alert('Команда wget скопирована');
+            });
+        } else {
+            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки для скачивания</div>';
+        }
     } catch (error) {
         container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
     }
 }
 
+// ---- Описание ----
+function showDescription(appName, description) {
+    const modal = document.getElementById('descriptionModal');
+    const content = document.getElementById('descriptionContent');
+    if (!modal || !content) return;
+    modal.querySelector('h2').textContent = `${appName} — Описание`;
+    content.textContent = description;
+    modal.classList.remove('hidden');
+    modal.classList.add('show');
+}
+
 // ---- Заглушки ----
-function showDescription() { alert('Описание доступно на сайте Uptodown.'); }
-function showComments() { alert('Отзывы доступны на сайте Uptodown.'); }
 function searchByUrl() {
     const url = document.getElementById('urlInput').value.trim();
     if (url) window.open(url, '_blank');
 }
-function openPreview() {}
+function openPreview(imageUrl, event) {}
 function closeImagePreview() {}
-function navigateImage() {}
+function navigateImage(dir) {}
 
 // ---- Инициализация ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -381,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
+    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -399,6 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Бесконечный скролл
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

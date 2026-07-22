@@ -4,7 +4,7 @@
 // ============================================================
 
 // -------- НАСТРОЙКА ПРОКСИ (укажите свой URL) --------
-const PROXY_BASE = 'https://rustore-search.vercel.app/api/'; // ← замените на ваш
+const PROXY_BASE = 'https://rustore-search.vercel.app/prj_9x5iqI9SYqaviQaFKhDRoS4PjLhd/'; // ← замените на ваш
 
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;

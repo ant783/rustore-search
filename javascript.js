@@ -1,7 +1,21 @@
 // ============================================================
-//  RuStore API (с обязательным заголовком ruStoreVerCode)
-//  Требуется отключение CORS (расширение или флаг браузера)
+//  RuStore API через CORS-прокси (выберите один вариант)
+//  По умолчанию используется https://proxy.cors.sh/
 // ============================================================
+
+// -------- НАСТРОЙКА ПРОКСИ (раскомментируйте нужный) --------
+// Вариант 1: proxy.cors.sh (рекомендуемый, стабильный)
+const PROXY_URL = 'https://proxy.cors.sh/';
+
+// Вариант 2: cors-anywhere (требует разового получения доступа)
+// const PROXY_URL = 'https://cors-anywhere.herokuapp.com/';
+
+// Вариант 3: corsproxy.io (иногда работает)
+// const PROXY_URL = 'https://corsproxy.io/?';
+
+// Вариант 4: без прокси (только если включено расширение CORS в браузере)
+// const PROXY_URL = '';
+// ------------------------------------------------------------
 
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;
@@ -85,20 +99,38 @@ const state = {
 };
 
 // ============================================================
-//  ОСНОВНЫЕ ФУНКЦИИ РАБОТЫ С API
+//  УНИВЕРСАЛЬНЫЙ FETCH С ПРОКСИ
 // ============================================================
-
-// ---- Универсальный fetch с таймаутом и заголовками ----
 async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-        const response = await fetch(url, {
+        let finalUrl = url;
+        if (PROXY_URL) {
+            // Для proxy.cors.sh и cors-anywhere просто добавляем префикс
+            if (PROXY_URL.includes('proxy.cors.sh') || PROXY_URL.includes('cors-anywhere')) {
+                finalUrl = PROXY_URL + url;
+            }
+            // Для corsproxy.io нужно кодировать URL
+            else if (PROXY_URL.includes('corsproxy.io')) {
+                finalUrl = PROXY_URL + encodeURIComponent(url);
+            }
+            // Для allorigins
+            else if (PROXY_URL.includes('allorigins')) {
+                finalUrl = PROXY_URL + encodeURIComponent(url);
+            }
+            // Универсальный случай
+            else {
+                finalUrl = PROXY_URL + url;
+            }
+        }
+
+        const response = await fetch(finalUrl, {
             ...options,
             signal: controller.signal,
             headers: {
                 'Content-Type': 'application/json; charset=utf-8',
-                'ruStoreVerCode': '247', // Обязательный заголовок!
+                'ruStoreVerCode': '247',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 ...(options.headers || {})
             }
@@ -111,7 +143,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Получение детальной информации о приложении ----
+// ---- Получение деталей приложения ----
 async function fetchAppDetails(packageName, { signal } = {}) {
     try {
         const url = `https://backapi.rustore.ru/applicationData/overallInfo/${packageName}`;
@@ -124,7 +156,7 @@ async function fetchAppDetails(packageName, { signal } = {}) {
         return null;
     } catch (error) {
         if (error.name !== 'AbortError') {
-            console.error('Ошибка получения деталей приложения:', error);
+            console.error('Ошибка получения деталей:', error);
         }
         return null;
     }
@@ -151,7 +183,6 @@ async function searchApps(query, isLoadMore = false) {
         const url = `https://backapi.rustore.ru/applicationData/apps?pageNumber=${state.page}&pageSize=20&query=${encodeURIComponent(query.trim())}`;
         const response = await fetchWithTimeout(url, { signal: state.controller.signal }, TIMEOUT_SEARCH);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
         const data = await response.json();
         if (query !== state.query) return;
 
@@ -174,7 +205,6 @@ async function searchApps(query, isLoadMore = false) {
                     resultsContainer.appendChild(createAppCard(appDetails, app));
                 }
             }
-
             state.hasMorePages = state.page < data.body.totalPages - 1;
             state.page++;
         } else {
@@ -184,9 +214,13 @@ async function searchApps(query, isLoadMore = false) {
         if (error.name !== 'AbortError') {
             console.error('Ошибка поиска:', error);
             if (!isLoadMore && query === state.query) {
-                let msg = 'Проверьте интернет-соединение и отключите CORS (расширение или флаг браузера).';
-                if (error.message.includes('403') || error.message.includes('401')) {
-                    msg = 'Ошибка авторизации. Возможно, требуется обновить заголовок ruStoreVerCode.';
+                let msg = 'Проверьте интернет-соединение.';
+                if (error.message.includes('403') && PROXY_URL.includes('cors-anywhere')) {
+                    msg = 'Прокси требует доступа: перейдите по ссылке ' + PROXY_URL + ' и нажмите "Request access".';
+                } else if (error.message.includes('403')) {
+                    msg = 'Прокси-сервер вернул ошибку доступа. Попробуйте другой прокси или установите расширение CORS.';
+                } else if (error.message.includes('HTTP')) {
+                    msg = `Сервер вернул ошибку: ${error.message}`;
                 }
                 ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', msg);
             }
@@ -258,7 +292,6 @@ function createAppCard(appDetails, app) {
         </div>
     `;
 
-    // Привязка событий
     card.querySelector('.description-toggle')?.addEventListener('click', (e) => {
         const name = e.currentTarget.getAttribute('data-name');
         const desc = e.currentTarget.getAttribute('data-desc');
@@ -409,7 +442,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
-    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -428,7 +460,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Бесконечный скролл
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {

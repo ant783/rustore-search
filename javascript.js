@@ -1,15 +1,16 @@
 // ============================================================
-//  RuStore через свой прокси на Vercel
-//  Укажите ваш адрес прокси в переменной PROXY_BASE
+//  RuStore через свой прокси-сервер на Vercel
+//  Укажите свой адрес прокси в переменной PROXY_BASE
 // ============================================================
 
 // -------- НАСТРОЙКА ПРОКСИ (укажите свой URL) --------
-const PROXY_BASE = 'https://rustore-search.vercel.app/'; // ← замените на ваш
+// Замените на реальный URL вашего прокси после деплоя на Vercel
+const PROXY_BASE = 'https://rustore-search.vercel.app/api/'; // ← СЮДА ВСТАВЬТЕ СВОЙ URL
 
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;
 
-// ---- Вспомогательные функции (без изменений) ----
+// ---- Вспомогательные функции ----
 const escapeHtml = (value) => {
     if (value == null) return '';
     return String(value)
@@ -94,8 +95,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-        // Все запросы идут через прокси, добавляем префикс
-        const proxyUrl = PROXY_BASE + url.replace(/^\/+/, ''); // убираем ведущие слеши
+        const proxyUrl = PROXY_BASE + url.replace(/^\/+/, '');
         const response = await fetch(proxyUrl, {
             ...options,
             signal: controller.signal,
@@ -190,7 +190,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки (без изменений) ----
+// ---- Создание карточки ----
 function createAppCard(appDetails, app) {
     const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
     const iconUrl = escapeHtml(appDetails.iconUrl || '');

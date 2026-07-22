@@ -1,6 +1,6 @@
-# Поиск и загрузка в RuStore
+# Поиск и загрузка apk в RuStore
 
-Как загрузить .apk файл на андроид?
+Как загрузить apk файл на андроид?
 Ищите приложения, смотрите требования к Android и скачивайте APK.
 
 <img width="775" height="442" alt="RuStore Search   Download" src="https://github.com/user-attachments/assets/5ab2e205-9c08-4c61-9401-22b0e1a3bc8c" />

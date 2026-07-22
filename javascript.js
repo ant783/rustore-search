@@ -1,26 +1,12 @@
 // ============================================================
-//  RuStore API через CORS-прокси (выберите один вариант)
-//  По умолчанию используется https://proxy.cors.sh/
+//  RuStore API через встроенный прокси на Vercel (/api/)
+//  Никаких CORS-проблем, расширения не нужны
 // ============================================================
-
-// -------- НАСТРОЙКА ПРОКСИ (раскомментируйте нужный) --------
-// Вариант 1: proxy.cors.sh (рекомендуемый, стабильный)
-const PROXY_URL = 'https://proxy.cors.sh/';
-
-// Вариант 2: cors-anywhere (требует разового получения доступа)
-// const PROXY_URL = 'https://cors-anywhere.herokuapp.com/';
-
-// Вариант 3: corsproxy.io (иногда работает)
-// const PROXY_URL = 'https://corsproxy.io/?';
-
-// Вариант 4: без прокси (только если включено расширение CORS в браузере)
-// const PROXY_URL = '';
-// ------------------------------------------------------------
 
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;
 
-// ---- Вспомогательные функции ----
+// ---- Вспомогательные функции (без изменений) ----
 const escapeHtml = (value) => {
     if (value == null) return '';
     return String(value)
@@ -49,7 +35,7 @@ const formatFileSize = bytes => {
     return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 };
 
-// ---- Modal Manager ----
+// ---- Modal Manager (без изменений) ----
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -98,34 +84,14 @@ const state = {
     }
 };
 
-// ============================================================
-//  УНИВЕРСАЛЬНЫЙ FETCH С ПРОКСИ
-// ============================================================
+// ---- Универсальный fetch с таймаутом (запросы через /api/) ----
 async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-        let finalUrl = url;
-        if (PROXY_URL) {
-            // Для proxy.cors.sh и cors-anywhere просто добавляем префикс
-            if (PROXY_URL.includes('proxy.cors.sh') || PROXY_URL.includes('cors-anywhere')) {
-                finalUrl = PROXY_URL + url;
-            }
-            // Для corsproxy.io нужно кодировать URL
-            else if (PROXY_URL.includes('corsproxy.io')) {
-                finalUrl = PROXY_URL + encodeURIComponent(url);
-            }
-            // Для allorigins
-            else if (PROXY_URL.includes('allorigins')) {
-                finalUrl = PROXY_URL + encodeURIComponent(url);
-            }
-            // Универсальный случай
-            else {
-                finalUrl = PROXY_URL + url;
-            }
-        }
-
-        const response = await fetch(finalUrl, {
+        // Все запросы идут через /api/ прокси на том же домене
+        const proxyUrl = '/api/' + url.replace('https://backapi.rustore.ru/', '');
+        const response = await fetch(proxyUrl, {
             ...options,
             signal: controller.signal,
             headers: {
@@ -214,14 +180,7 @@ async function searchApps(query, isLoadMore = false) {
         if (error.name !== 'AbortError') {
             console.error('Ошибка поиска:', error);
             if (!isLoadMore && query === state.query) {
-                let msg = 'Проверьте интернет-соединение.';
-                if (error.message.includes('403') && PROXY_URL.includes('cors-anywhere')) {
-                    msg = 'Прокси требует доступа: перейдите по ссылке ' + PROXY_URL + ' и нажмите "Request access".';
-                } else if (error.message.includes('403')) {
-                    msg = 'Прокси-сервер вернул ошибку доступа. Попробуйте другой прокси или установите расширение CORS.';
-                } else if (error.message.includes('HTTP')) {
-                    msg = `Сервер вернул ошибку: ${error.message}`;
-                }
+                let msg = 'Проверьте интернет-соединение и корректность настройки прокси на сервере.';
                 ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', msg);
             }
         }
@@ -230,7 +189,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки приложения ----
+// ---- Создание карточки приложения (без изменений) ----
 function createAppCard(appDetails, app) {
     const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
     const iconUrl = escapeHtml(appDetails.iconUrl || '');
@@ -308,7 +267,7 @@ function createAppCard(appDetails, app) {
     return card;
 }
 
-// ---- Скачивание APK ----
+// ---- Скачивание APK (через /api/) ----
 async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
@@ -323,7 +282,7 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
 
     try {
         const density = options.screenDensity || 320;
-        const url = 'https://backapi.rustore.ru/applicationData/v2/download-link';
+        const url = `https://backapi.rustore.ru/applicationData/v2/download-link`;
         const response = await fetchWithTimeout(url, {
             method: 'POST',
             body: JSON.stringify({

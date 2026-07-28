@@ -2,9 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://backapi.rustore.ru/:path*?${
-        Object.keys(req.query).map(key => key + '=' + req.query[key]).join('&')
-      }"
+      "destination": "https://backapi.rustore.ru/:path*"
     }
   ],
   "headers": [

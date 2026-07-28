@@ -6,7 +6,7 @@
 function getApiBase() {
     const hostname = window.location.hostname;
     if (hostname.includes('github.io')) {
-        return 'https://rustore-search.vercel.app/api/';
+        return 'https://rustore-search-git-main-milleniumprm.vercel.app/api/';
     }
     return '/api/';
 }

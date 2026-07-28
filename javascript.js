@@ -1,14 +1,24 @@
 // ============================================================
-//  RuStore через свой прокси-сервер на Vercel
-//  Укажите свой адрес прокси в переменной PROXY_BASE
+//  RuStore через прокси-сервер (автоматический выбор)
+//  Поддерживает: GitHub Pages, Vercel, localhost
 // ============================================================
 
-// -------- НАСТРОЙКА ПРОКСИ (укажите свой URL) --------
-// Замените на реальный URL вашего прокси после деплоя на Vercel
-// Определяем базовый URL для API в зависимости от окружения
-const API_BASE = window.location.hostname === 'localhost' 
-  ? '/api/'                                    // для локальной разработки
-  : 'https://rustore-search.vercel.app/';     // для продакшена (замените на свой URL)
+// -------- АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПРОКСИ --------
+function getApiBase() {
+    const hostname = window.location.hostname;
+    
+    // Если сайт запущен на GitHub Pages — используем Vercel-прокси
+    if (hostname.includes('github.io')) {
+        return 'https://rustore-search.vercel.app/api/';
+    }
+    
+    // Для Vercel и localhost используем относительный путь /api/
+    // (предполагается, что на этих платформах настроен прокси)
+    return '/api/';
+}
+
+const API_BASE = getApiBase();
+console.log('🔧 API_BASE:', API_BASE); // для отладки
 
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;
@@ -98,7 +108,10 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
+        // Убираем ведущие слеши и формируем полный URL через прокси
         const proxyUrl = API_BASE + url.replace(/^\/+/, '');
+        console.log('🔄 Запрос к прокси:', proxyUrl); // для отладки
+        
         const response = await fetch(proxyUrl, {
             ...options,
             signal: controller.signal,
@@ -117,7 +130,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Получение деталей ----
+// ---- Получение деталей приложения ----
 async function fetchAppDetails(packageName, { signal } = {}) {
     try {
         const url = `applicationData/overallInfo/${packageName}`;
@@ -132,7 +145,7 @@ async function fetchAppDetails(packageName, { signal } = {}) {
     }
 }
 
-// ---- Поиск ----
+// ---- Поиск приложений ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -193,7 +206,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки ----
+// ---- Создание карточки приложения ----
 function createAppCard(appDetails, app) {
     const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
     const iconUrl = escapeHtml(appDetails.iconUrl || '');
@@ -271,7 +284,7 @@ function createAppCard(appDetails, app) {
     return card;
 }
 
-// ---- Скачивание ----
+// ---- Скачивание APK ----
 async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');

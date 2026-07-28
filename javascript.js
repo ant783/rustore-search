@@ -1,27 +1,21 @@
 // ============================================================
-//  RuStore через прокси-сервер (автоматический выбор)
-//  Поддерживает: GitHub Pages, Vercel, localhost
+//  RuStore через прокси (упрощённая версия без дополнительных запросов)
+//  Автоматический выбор прокси: GitHub Pages → Vercel, локально → /api/
 // ============================================================
 
 // -------- АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПРОКСИ --------
 function getApiBase() {
     const hostname = window.location.hostname;
-    
-    // Если сайт запущен на GitHub Pages — используем Vercel-прокси
     if (hostname.includes('github.io')) {
         return 'https://rustore-search.vercel.app/api/';
     }
-    
-    // Для Vercel и localhost используем относительный путь /api/
-    // (предполагается, что на этих платформах настроен прокси)
-    return '/api/';
+    return '/api/'; // для Vercel и localhost
 }
 
 const API_BASE = getApiBase();
-console.log('🔧 API_BASE:', API_BASE); // для отладки
+console.log('🔧 API_BASE:', API_BASE);
 
 const TIMEOUT_SEARCH = 15000;
-const TIMEOUT_DOWNLOAD = 20000;
 
 // ---- Вспомогательные функции ----
 const escapeHtml = (value) => {
@@ -45,14 +39,7 @@ const createRatingStars = rating => {
     ).join('');
 };
 
-const formatFileSize = bytes => {
-    if (bytes === 0) return '0 Bytes';
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
-};
-
-// ---- Modal Manager ----
+// ---- Modal Manager (упрощённый) ----
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -101,17 +88,13 @@ const state = {
     }
 };
 
-// ============================================================
-//  УНИВЕРСАЛЬНЫЙ FETCH ЧЕРЕЗ ПРОКСИ
-// ============================================================
+// ---- Универсальный fetch с таймаутом ----
 async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-        // Убираем ведущие слеши и формируем полный URL через прокси
         const proxyUrl = API_BASE + url.replace(/^\/+/, '');
-        console.log('🔄 Запрос к прокси:', proxyUrl); // для отладки
-        
+        console.log('🔄 Запрос:', proxyUrl);
         const response = await fetch(proxyUrl, {
             ...options,
             signal: controller.signal,
@@ -130,22 +113,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Получение деталей приложения ----
-async function fetchAppDetails(packageName, { signal } = {}) {
-    try {
-        const url = `applicationData/overallInfo/${packageName}`;
-        const response = await fetchWithTimeout(url, { signal }, TIMEOUT_SEARCH);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        if (data.code === 'OK' && data.body) return data.body;
-        return null;
-    } catch (error) {
-        if (error.name !== 'AbortError') console.error('Ошибка деталей:', error);
-        return null;
-    }
-}
-
-// ---- Поиск приложений ----
+// ---- Поиск приложений (без дополнительных запросов) ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -169,6 +137,8 @@ async function searchApps(query, isLoadMore = false) {
         const data = await response.json();
         if (query !== state.query) return;
 
+        console.log('📦 Ответ API:', data);
+
         if (data.code === 'OK' && data.body) {
             const results = data.body.content;
             if (!isLoadMore) resultsContainer.innerHTML = '';
@@ -183,11 +153,20 @@ async function searchApps(query, isLoadMore = false) {
 
             for (const app of results) {
                 if (query !== state.query) return;
-                const appDetails = await fetchAppDetails(app.packageName, { signal: state.controller.signal });
-                if (appDetails && query === state.query) {
-                    resultsContainer.appendChild(createAppCard(appDetails, app));
-                }
+                // Создаём карточку напрямую из данных поиска
+                const appData = {
+                    appName: app.appName || 'Unknown',
+                    iconUrl: app.iconUrl || '',
+                    shortDescription: app.shortDescription || '',
+                    packageName: app.packageName || '',
+                    rating: app.averageUserRating || 0,
+                    totalRatings: app.totalRatings || 0,
+                    appId: app.appId,
+                    // для скачивания понадобится appId и другие поля
+                };
+                resultsContainer.appendChild(createAppCard(appData));
             }
+
             state.hasMorePages = state.page < data.body.totalPages - 1;
             state.page++;
         } else {
@@ -197,8 +176,7 @@ async function searchApps(query, isLoadMore = false) {
         if (error.name !== 'AbortError') {
             console.error('Ошибка поиска:', error);
             if (!isLoadMore && query === state.query) {
-                let msg = 'Проверьте интернет-соединение и адрес прокси.';
-                ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', msg);
+                ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', 'Проверьте интернет и адрес прокси.');
             }
         }
     } finally {
@@ -206,100 +184,59 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки приложения ----
-function createAppCard(appDetails, app) {
-    const screenshots = (appDetails.fileUrls || []).sort((a, b) => a.ordinal - b.ordinal);
-    const iconUrl = escapeHtml(appDetails.iconUrl || '');
-    const appName = escapeHtml(appDetails.appName || '');
-    const packageName = escapeHtml(appDetails.packageName || '');
-    const shortDescription = escapeHtml(appDetails.shortDescription || '');
-    const appId = escapeHtml(String(appDetails.appId));
-    const versionCode = escapeHtml(String(appDetails.versionCode));
-    const fileSize = formatFileSize(appDetails.fileSize || 0);
-    const versionName = escapeHtml(appDetails.versionName || '');
-    const downloads = (appDetails.downloads || 0).toLocaleString();
-    const rating = app.averageUserRating || 0;
-    const totalRatings = (app.totalRatings || 0).toLocaleString();
+// ---- Создание карточки (упрощённое, без скриншотов и доп. данных) ----
+function createAppCard(appData) {
+    const { appName, iconUrl, shortDescription, packageName, rating, totalRatings, appId } = appData;
     const ratingStars = createRatingStars(rating);
     const ratingValue = rating.toFixed(1);
-    const fullDescription = appDetails.fullDescription || '';
-    const descJson = JSON.stringify(fullDescription);
-
-    let screenshotsHtml = '';
-    for (const s of screenshots) {
-        const src = escapeHtml(s.fileUrl);
-        screenshotsHtml += `<img src="${src}" alt="Screenshot" class="w-40 cursor-pointer rounded shadow" onclick="openPreview('${src}', event)">`;
-    }
 
     const card = document.createElement('div');
     card.className = 'app-card p-4 flex flex-col justify-between h-full';
     card.innerHTML = `
         <div class="flex items-start gap-4">
-            <img src="${iconUrl}" alt="${appName}" class="w-20 h-20 rounded-lg" onerror="this.src='https://via.placeholder.com/80'">
+            <img src="${escapeHtml(iconUrl)}" alt="${escapeHtml(appName)}" class="w-20 h-20 rounded-lg" onerror="this.src='https://via.placeholder.com/80'">
             <div class="flex-1 flex flex-col min-w-0">
-                <h2 class="text-xl font-bold break-words">${appName}</h2>
-                <p class="text-gray-600 break-words text-sm" title="${packageName}">${packageName}</p>
+                <h2 class="text-xl font-bold break-words">${escapeHtml(appName)}</h2>
+                <p class="text-gray-600 break-words text-sm" title="${escapeHtml(packageName)}">${escapeHtml(packageName)}</p>
                 <div class="rating mt-2">
                     ${ratingStars}
                     ${ratingValue}
-                    <span class="text-sm text-gray-600">(${totalRatings})</span>
+                    <span class="text-sm text-gray-600">(${totalRatings || 0})</span>
                 </div>
             </div>
         </div>
         <div class="mt-4">
-            <p class="text-gray-700 text-sm">${shortDescription}</p>
-            <button class="description-toggle mt-2 text-blue-600 text-sm" data-name="${appName}" data-desc='${descJson}'>Показать полное описание</button>
-        </div>
-        ${screenshotsHtml ? `<div class="screenshots-container my-4 flex gap-2 overflow-x-auto">${screenshotsHtml}</div>` : ''}
-        <div class="grid grid-cols-2 gap-1 text-sm text-gray-600 mt-2">
-            <div>Версия: ${versionName}</div>
-            <div>Размер: ~${fileSize}</div>
-            <div>Загрузок: ${downloads}</div>
-            <div>App ID: ${appId}</div>
+            <p class="text-gray-700 text-sm">${escapeHtml(shortDescription)}</p>
         </div>
         <div class="mt-4 flex justify-between items-center">
             <button class="download-btn bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600" 
-                    data-appid="${appDetails.appId}" 
-                    data-sdk="${appDetails.minSdkVersion}" 
-                    data-appname="${appName}" 
-                    data-versionname="${versionName}">
+                    data-appid="${appId}" 
+                    data-appname="${escapeHtml(appName)}">
                 Скачать APK
             </button>
+            <span class="text-xs text-gray-500">RuStore</span>
         </div>
     `;
 
-    card.querySelector('.description-toggle')?.addEventListener('click', (e) => {
-        const name = e.currentTarget.getAttribute('data-name');
-        const desc = e.currentTarget.getAttribute('data-desc');
-        showDescription(name, desc);
-    });
     card.querySelector('.download-btn')?.addEventListener('click', (e) => {
         const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
-        const sdk = parseInt(e.currentTarget.getAttribute('data-sdk'));
         const appName = e.currentTarget.getAttribute('data-appname');
-        const versionName = e.currentTarget.getAttribute('data-versionname');
-        downloadApp(appId, sdk, appName, versionName);
+        downloadApp(appId, appName);
     });
 
     return card;
 }
 
-// ---- Скачивание APK ----
-async function downloadApp(appId, sdkVersion, appName, versionName, options = {}) {
+// ---- Скачивание APK (упрощённое, без sdkVersion, используем значение по умолчанию) ----
+async function downloadApp(appId, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
     if (!container) return;
 
-    const sanitizeFileName = (name) => {
-        return name.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_').trim();
-    };
-    const safeAppName = sanitizeFileName(appName || 'app');
-    const safeVersion = sanitizeFileName(versionName || 'unknown');
-    const suggestedFileName = `${safeAppName}_${safeVersion}.apk`;
+    const suggestedFileName = `${appName.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_')}.apk`;
 
     try {
-        const density = options.screenDensity || 320;
-        const url = `applicationData/v2/download-link`;
+        const url = 'applicationData/v2/download-link';
         const response = await fetchWithTimeout(url, {
             method: 'POST',
             body: JSON.stringify({
@@ -307,13 +244,13 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
                 firstInstall: true,
                 mobileServices: [],
                 supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
-                screenDensity: density,
+                screenDensity: 320,
                 supportedLocales: ['ru_RU'],
-                sdkVersion,
+                sdkVersion: 29, // можно указать фиксированное значение, обычно работает
                 withoutSplits: false,
                 signatureFingerprint: null
             })
-        }, TIMEOUT_DOWNLOAD);
+        }, 20000);
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
@@ -370,25 +307,15 @@ async function downloadApp(appId, sdkVersion, appName, versionName, options = {}
     }
 }
 
-// ---- Описание ----
-function showDescription(appName, description) {
-    const modal = document.getElementById('descriptionModal');
-    const content = document.getElementById('descriptionContent');
-    if (!modal || !content) return;
-    modal.querySelector('h2').textContent = `${appName} — Описание`;
-    content.textContent = description;
-    modal.classList.remove('hidden');
-    modal.classList.add('show');
-}
-
 // ---- Заглушки ----
 function searchByUrl() {
     const url = document.getElementById('urlInput').value.trim();
     if (url) window.open(url, '_blank');
 }
-function openPreview(imageUrl, event) {}
+function showDescription() { alert('Описание доступно на странице RuStore.'); }
+function openPreview() {}
 function closeImagePreview() {}
-function navigateImage(dir) {}
+function navigateImage() {}
 
 // ---- Инициализация ----
 document.addEventListener('DOMContentLoaded', () => {

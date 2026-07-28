@@ -1,6 +1,5 @@
 // ============================================================
-//  RuStore через прокси (упрощённая версия без дополнительных запросов)
-//  Автоматический выбор прокси: GitHub Pages → Vercel, локально → /api/
+//  RuStore через прокси (Serverless Function на Vercel)
 // ============================================================
 
 // -------- АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПРОКСИ --------
@@ -16,6 +15,7 @@ const API_BASE = getApiBase();
 console.log('🔧 API_BASE:', API_BASE);
 
 const TIMEOUT_SEARCH = 15000;
+const TIMEOUT_DOWNLOAD = 20000;
 
 // ---- Вспомогательные функции ----
 const escapeHtml = (value) => {
@@ -39,7 +39,7 @@ const createRatingStars = rating => {
     ).join('');
 };
 
-// ---- Modal Manager (упрощённый) ----
+// ---- Modal Manager ----
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -113,7 +113,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Поиск приложений (БЕЗ ДОПОЛНИТЕЛЬНЫХ ЗАПРОСОВ) ----
+// ---- Поиск приложений (без дополнительных запросов) ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -153,7 +153,6 @@ async function searchApps(query, isLoadMore = false) {
 
             for (const app of results) {
                 if (query !== state.query) return;
-                // Создаём карточку напрямую из данных поиска
                 const appData = {
                     appName: app.appName || 'Unknown',
                     iconUrl: app.iconUrl || '',
@@ -173,7 +172,7 @@ async function searchApps(query, isLoadMore = false) {
         }
     } catch (error) {
         if (error.name !== 'AbortError') {
-            console.error('Ошибка поиска:', error);
+            console.error('❌ Ошибка поиска:', error);
             if (!isLoadMore && query === state.query) {
                 ModalManager.showError('searchResults', 'Не удалось подключиться к RuStore', 'Проверьте интернет и адрес прокси.');
             }
@@ -183,7 +182,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки (без скриншотов и доп. данных) ----
+// ---- Создание карточки ----
 function createAppCard(appData) {
     const { appName, iconUrl, shortDescription, packageName, rating, totalRatings, appId } = appData;
     const ratingStars = createRatingStars(rating);
@@ -226,7 +225,7 @@ function createAppCard(appData) {
     return card;
 }
 
-// ---- Скачивание APK (без sdkVersion) ----
+// ---- Скачивание APK ----
 async function downloadApp(appId, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
@@ -245,11 +244,11 @@ async function downloadApp(appId, appName) {
                 supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
                 screenDensity: 320,
                 supportedLocales: ['ru_RU'],
-                sdkVersion: 29, // фиксированное значение, обычно работает
+                sdkVersion: 29,
                 withoutSplits: false,
                 signatureFingerprint: null
             })
-        }, 20000);
+        }, TIMEOUT_DOWNLOAD);
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
@@ -302,6 +301,7 @@ async function downloadApp(appId, appName) {
             container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки для скачивания</div>';
         }
     } catch (error) {
+        console.error('❌ Ошибка скачивания:', error);
         container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
     }
 }

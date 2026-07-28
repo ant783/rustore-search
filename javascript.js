@@ -8,7 +8,7 @@ function getApiBase() {
     if (hostname.includes('github.io')) {
         return 'https://rustore-search.vercel.app/api/';
     }
-    return '/api/'; // для Vercel и localhost
+    return '/api/';
 }
 
 const API_BASE = getApiBase();

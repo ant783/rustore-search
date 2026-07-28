@@ -98,7 +98,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-        const proxyUrl = PROXY_BASE + url.replace(/^\/+/, '');
+        const proxyUrl = API_BASE + url.replace(/^\/+/, '');
         const response = await fetch(proxyUrl, {
             ...options,
             signal: controller.signal,

@@ -113,7 +113,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Поиск приложений (без дополнительных запросов) ----
+// ---- Поиск приложений (БЕЗ ДОПОЛНИТЕЛЬНЫХ ЗАПРОСОВ) ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -162,7 +162,6 @@ async function searchApps(query, isLoadMore = false) {
                     rating: app.averageUserRating || 0,
                     totalRatings: app.totalRatings || 0,
                     appId: app.appId,
-                    // для скачивания понадобится appId и другие поля
                 };
                 resultsContainer.appendChild(createAppCard(appData));
             }
@@ -184,7 +183,7 @@ async function searchApps(query, isLoadMore = false) {
     }
 }
 
-// ---- Создание карточки (упрощённое, без скриншотов и доп. данных) ----
+// ---- Создание карточки (без скриншотов и доп. данных) ----
 function createAppCard(appData) {
     const { appName, iconUrl, shortDescription, packageName, rating, totalRatings, appId } = appData;
     const ratingStars = createRatingStars(rating);
@@ -227,7 +226,7 @@ function createAppCard(appData) {
     return card;
 }
 
-// ---- Скачивание APK (упрощённое, без sdkVersion, используем значение по умолчанию) ----
+// ---- Скачивание APK (без sdkVersion) ----
 async function downloadApp(appId, appName) {
     ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
     const container = document.getElementById('downloadResults');
@@ -246,7 +245,7 @@ async function downloadApp(appId, appName) {
                 supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
                 screenDensity: 320,
                 supportedLocales: ['ru_RU'],
-                sdkVersion: 29, // можно указать фиксированное значение, обычно работает
+                sdkVersion: 29, // фиксированное значение, обычно работает
                 withoutSplits: false,
                 signatureFingerprint: null
             })

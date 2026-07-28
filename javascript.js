@@ -5,7 +5,10 @@
 
 // -------- НАСТРОЙКА ПРОКСИ (укажите свой URL) --------
 // Замените на реальный URL вашего прокси после деплоя на Vercel
-const PROXY_BASE = 'https://rustore-search.vercel.app/api/'; // ← СЮДА ВСТАВЬТЕ СВОЙ URL
+// Определяем базовый URL для API в зависимости от окружения
+const API_BASE = window.location.hostname === 'localhost' 
+  ? '/api/'                                    // для локальной разработки
+  : 'https://rustore-search.vercel.app/';     // для продакшена (замените на свой URL)
 
 const TIMEOUT_SEARCH = 15000;
 const TIMEOUT_DOWNLOAD = 20000;

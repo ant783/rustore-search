@@ -1,26 +1,28 @@
 // api/[...path].js
 export default async function handler(req, res) {
-  // 1. Устанавливаем CORS-заголовки для всех ответов
+  // Устанавливаем CORS-заголовки для всех ответов
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, ruStoreVerCode, User-Agent');
 
-  // 2. Обрабатываем preflight-запрос OPTIONS
+  // Обрабатываем preflight-запрос OPTIONS
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // 3. Извлекаем путь из запроса
+  // Извлекаем путь из запроса
   const { path } = req.query; // массив частей пути
   const pathString = Array.isArray(path) ? path.join('/') : path;
 
-  // 4. Формируем URL для RuStore
+  // Формируем URL для RuStore
   const params = new URLSearchParams(req.query);
-  params.delete('path'); // удаляем служебный параметр
-  const url = `https://backapi.rustore.ru/${pathString}${params.toString() ? '?' + params.toString() : ''}`;
+  params.delete('path'); // убираем служебный параметр
+  const queryString = params.toString() ? '?' + params.toString() : '';
+  const targetUrl = `https://backapi.rustore.ru/${pathString}${queryString}`;
+
+  console.log('🔄 Прокси запрос:', req.method, targetUrl);
 
   try {
-    // 5. Создаём запрос к RuStore
     const fetchOptions = {
       method: req.method,
       headers: {
@@ -30,19 +32,19 @@ export default async function handler(req, res) {
       },
     };
 
-    // Для POST добавляем тело (если есть)
+    // Для POST добавляем тело
     if (req.method === 'POST') {
       fetchOptions.body = JSON.stringify(req.body);
     }
 
-    // 6. Отправляем запрос к RuStore
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(targetUrl, fetchOptions);
     const data = await response.json();
 
-    // 7. Возвращаем ответ клиенту
+    console.log('✅ Ответ от RuStore:', response.status);
+
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('Ошибка прокси:', error);
+    console.error('❌ Ошибка прокси:', error.message);
     res.status(500).json({ error: error.message });
   }
 }

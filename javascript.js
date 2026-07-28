@@ -1,13 +1,18 @@
 // ============================================================
-//  RuStore через прокси (Serverless Function на Vercel)
+//  RuStore Downloader
+//  Автоматический выбор прокси:
+//    - GitHub Pages → https://rustore-xi.vercel.app/api/
+//    - Vercel / локально → /api/
 // ============================================================
 
 // -------- АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПРОКСИ --------
 function getApiBase() {
     const hostname = window.location.hostname;
+    // Если сайт запущен на GitHub Pages — используем Vercel-прокси
     if (hostname.includes('github.io')) {
         return 'https://rustore-search.vercel.app/api/';
     }
+    // Для Vercel и локальной разработки используем относительный путь
     return '/api/';
 }
 
@@ -113,7 +118,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Поиск приложений (без дополнительных запросов) ----
+// ---- Поиск приложений (БЕЗ ДОПОЛНИТЕЛЬНЫХ ЗАПРОСОВ) ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();

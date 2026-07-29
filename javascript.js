@@ -3,16 +3,17 @@
 //  Автоматический выбор прокси:
 //    - GitHub Pages → https://rustore-xi.vercel.app/api/
 //    - Vercel / локально → /api/
+//    - Codeberg → можно указать вручную
 // ============================================================
 
-// -------- АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПРОКСИ --------
+// -------- НАСТРОЙКА ПРОКСИ --------
 function getApiBase() {
     const hostname = window.location.hostname;
-    // Если сайт запущен на GitHub Pages — используем Vercel-прокси
+    // Для GitHub Pages используем Vercel-прокси
     if (hostname.includes('github.io')) {
-        return 'https://rustore-search.vercel.app/api/';
+        return 'https://rustore-xi.vercel.app/api/';
     }
-    // Для Vercel и локальной разработки используем относительный путь
+    // Для локальной разработки и Vercel
     return '/api/';
 }
 
@@ -44,7 +45,7 @@ const createRatingStars = rating => {
     ).join('');
 };
 
-// ---- Modal Manager ----
+// ---- Modal Manager (только для описания) ----
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -118,7 +119,7 @@ async function fetchWithTimeout(url, options = {}, timeout = TIMEOUT_SEARCH) {
     }
 }
 
-// ---- Поиск приложений (БЕЗ ДОПОЛНИТЕЛЬНЫХ ЗАПРОСОВ) ----
+// ---- Поиск приложений (без дополнительных запросов) ----
 async function searchApps(query, isLoadMore = false) {
     if (!isLoadMore) {
         state.reset();
@@ -210,6 +211,7 @@ function createAppCard(appData) {
         </div>
         <div class="mt-4">
             <p class="text-gray-700 text-sm">${escapeHtml(shortDescription)}</p>
+            <button class="description-toggle mt-2 text-blue-600 text-sm" data-name="${escapeHtml(appName)}" data-desc="${escapeHtml(shortDescription)}">Показать описание</button>
         </div>
         <div class="mt-4 flex justify-between items-center">
             <button class="download-btn bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600" 
@@ -221,6 +223,11 @@ function createAppCard(appData) {
         </div>
     `;
 
+    card.querySelector('.description-toggle')?.addEventListener('click', (e) => {
+        const name = e.currentTarget.getAttribute('data-name');
+        const desc = e.currentTarget.getAttribute('data-desc');
+        showDescription(name, desc);
+    });
     card.querySelector('.download-btn')?.addEventListener('click', (e) => {
         const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
         const appName = e.currentTarget.getAttribute('data-appname');
@@ -230,14 +237,8 @@ function createAppCard(appData) {
     return card;
 }
 
-// ---- Скачивание APK ----
+// ---- Скачивание APK (упрощённое: прямая ссылка) ----
 async function downloadApp(appId, appName) {
-    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
-    const container = document.getElementById('downloadResults');
-    if (!container) return;
-
-    const suggestedFileName = `${appName.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_')}.apk`;
-
     try {
         const url = 'applicationData/v2/download-link';
         const response = await fetchWithTimeout(url, {
@@ -259,56 +260,26 @@ async function downloadApp(appId, appName) {
         const data = await response.json();
 
         if (data.code === 'OK' && data.body?.downloadUrls?.length) {
-            const urls = data.body.downloadUrls;
-            container.innerHTML = `
-                <div class="space-y-3">
-                    <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
-                        <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
-                        <div class="text-sm text-yellow-700 mt-1">
-                            Нажмите правой кнопкой по ссылке и выберите «Сохранить ссылку как…»<br>
-                            Имя файла: <strong>${escapeHtml(suggestedFileName)}</strong>
-                        </div>
-                    </div>
-                    <div class="font-semibold">Ссылки для скачивания:</div>
-                    ${urls.map((u, idx) => `
-                        <div class="p-2 bg-gray-50 rounded break-all">
-                            <div class="text-sm text-gray-600 mb-1">Файл ${idx+1}</div>
-                            <a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 underline text-sm">${escapeHtml(u.url)}</a>
-                        </div>
-                    `).join('')}
-                    <div class="mt-4 p-3 bg-gray-100 rounded">
-                        <div class="font-semibold">Команды для загрузки:</div>
-                        <div class="mt-2">
-                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                                curl -L -o "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
-                            </div>
-                            <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
-                        </div>
-                        <div class="mt-2">
-                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                                wget -O "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
-                            </div>
-                            <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
-                await navigator.clipboard.writeText(`curl -L -o "${suggestedFileName}" "${urls[0].url}"`);
-                alert('Команда curl скопирована');
-            });
-            document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
-                await navigator.clipboard.writeText(`wget -O "${suggestedFileName}" "${urls[0].url}"`);
-                alert('Команда wget скопирована');
-            });
+            const apkUrl = data.body.downloadUrls[0].url;
+            window.open(apkUrl, '_blank');
         } else {
-            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки для скачивания</div>';
+            alert('Не удалось получить ссылку для скачивания.');
         }
     } catch (error) {
-        console.error('❌ Ошибка скачивания:', error);
-        container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
+        console.error('Ошибка скачивания:', error);
+        alert('Ошибка при получении ссылки: ' + error.message);
     }
+}
+
+// ---- Описание ----
+function showDescription(appName, description) {
+    const modal = document.getElementById('descriptionModal');
+    const content = document.getElementById('descriptionContent');
+    if (!modal || !content) return;
+    modal.querySelector('h2').textContent = `${appName} — Описание`;
+    content.textContent = description;
+    modal.classList.remove('hidden');
+    modal.classList.add('show');
 }
 
 // ---- Заглушки ----
@@ -316,10 +287,9 @@ function searchByUrl() {
     const url = document.getElementById('urlInput').value.trim();
     if (url) window.open(url, '_blank');
 }
-function showDescription() { alert('Описание доступно на странице RuStore.'); }
-function openPreview() {}
+function openPreview(imageUrl, event) {}
 function closeImagePreview() {}
-function navigateImage() {}
+function navigateImage(dir) {}
 
 // ---- Инициализация ----
 document.addEventListener('DOMContentLoaded', () => {

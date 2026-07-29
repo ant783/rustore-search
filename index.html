@@ -3,48 +3,40 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RuStore Downloader</title>
+    <title>RuStore Search & Download</title>
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-    <div class="container mx-auto p-4 max-w-7xl">
-        <h1 class="text-3xl font-bold text-center mb-6">🔍 RuStore Downloader</h1>
+    <div class="container mx-auto p-4 max-w-4xl">
+        <!-- Шапка -->
+        <div class="flex items-center gap-4 mb-6">
+            <span class="text-gray-600 text-sm font-medium">Главная</span>
+            <h1 class="text-2xl font-bold text-gray-800">RuStore Search & Download</h1>
+        </div>
 
         <!-- Поиск по названию -->
-        <div class="flex flex-col sm:flex-row gap-2 mb-4">
+        <div class="mb-4">
             <input
                 type="text"
                 id="searchInput"
-                placeholder="Название приложения..."
-                class="flex-1 p-2 border rounded"
+                placeholder="Поиск приложений..."
+                class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
-            <button
-                id="clearSearch"
-                class="hidden px-4 py-2 bg-gray-300 rounded"
-            >
-                ✕
-            </button>
         </div>
 
         <!-- Поиск по ссылке -->
-        <div class="flex flex-col sm:flex-row gap-2 mb-4">
+        <div class="flex gap-2 mb-6">
             <input
                 type="url"
                 id="urlInput"
-                placeholder="Ссылка на приложение RuStore (опционально)"
-                class="flex-1 p-2 border rounded"
+                placeholder="Вставьте ссылку на приложение из RuStore"
+                class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
             <button
-                id="clearUrlSearch"
-                class="hidden px-4 py-2 bg-gray-300 rounded"
-            >
-                ✕
-            </button>
-            <button
                 id="searchByUrlBtn"
-                class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
             >
-                Найти по ссылке
+                Найти
             </button>
         </div>
 
@@ -52,36 +44,45 @@
         <div id="searchResults" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- Карточки будут добавляться сюда -->
         </div>
+
+        <!-- Футер -->
+        <div class="mt-8 text-center text-sm text-gray-500 border-t pt-4">
+            <a
+                href="https://github.com/ant783/rustore-search"
+                target="_blank"
+                class="text-blue-600 hover:underline"
+            >
+                Исходный код на GitHub
+            </a>
+        </div>
     </div>
 
     <!-- Модалка для скачивания -->
-    <div id="downloadModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div id="downloadModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="modal-content bg-white p-6 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold">📦 Скачивание</h2>
-                <button class="modal-close text-gray-600 hover:text-gray-800">&times;</button>
+                <button class="modal-close text-gray-600 hover:text-gray-800 text-2xl">&times;</button>
             </div>
-            <div id="downloadResults" class="text-gray-700">
-                <!-- Содержимое будет вставлено сюда -->
-            </div>
+            <div id="downloadResults" class="text-gray-700"></div>
         </div>
     </div>
 
     <!-- Модалка для описания -->
-    <div id="descriptionModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div id="descriptionModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="modal-content bg-white p-6 rounded-lg max-w-lg w-full max-h-[80vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold"></h2>
-                <button class="modal-close text-gray-600 hover:text-gray-800">&times;</button>
+                <button class="modal-close text-gray-600 hover:text-gray-800 text-2xl">&times;</button>
             </div>
             <div id="descriptionContent" class="text-gray-700"></div>
         </div>
     </div>
 
-    <!-- Модалка для превью изображений (не используется, но оставлена для совместимости) -->
-    <div id="imagePreviewModal" class="modal hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center">
+    <!-- Модалка для превью изображений (не используется) -->
+    <div id="imagePreviewModal" class="modal hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
         <div class="relative max-w-3xl w-full p-4">
-            <button class="absolute top-2 right-2 text-white text-2xl modal-close">&times;</button>
+            <button class="absolute top-2 right-2 text-white text-3xl modal-close">&times;</button>
             <button id="prevImage" class="absolute left-2 top-1/2 transform -translate-y-1/2 text-white text-3xl bg-black bg-opacity-50 px-2 py-1 rounded">‹</button>
             <button id="nextImage" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-white text-3xl bg-black bg-opacity-50 px-2 py-1 rounded">›</button>
             <img id="previewImage" src="" alt="Screenshot" class="w-full h-auto rounded" />
@@ -89,7 +90,6 @@
         </div>
     </div>
 
-    <!-- Скрипты -->
     <script src="javascript.js"></script>
 </body>
 </html>

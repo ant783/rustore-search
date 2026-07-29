@@ -1,10 +1,10 @@
 // -------- НАСТРОЙКА ПРОКСИ --------
 function getApiBase() {
     const hostname = window.location.hostname;
-    if (hostname.includes('github.io')) {
-        return 'https://rustore-search.vercel.app/api/';
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return '/api/'; // для локальной разработки с npx local-web-server
     }
-    return '/api/';
+    return 'https://rustore-search.vercel.app/api/';
 }
 
 const API_BASE = getApiBase();

@@ -237,8 +237,13 @@ function createAppCard(appData) {
     return card;
 }
 
-// ---- Скачивание APK (упрощённое: прямая ссылка) ----
+// ---- Скачивание APK (с модальным окном и ссылкой) ----
 async function downloadApp(appId, appName) {
+    // Показываем модальное окно с индикацией загрузки
+    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">⏳ Получение ссылки...</div>');
+    const container = document.getElementById('downloadResults');
+    if (!container) return;
+
     try {
         const url = 'applicationData/v2/download-link';
         const response = await fetchWithTimeout(url, {
@@ -261,13 +266,28 @@ async function downloadApp(appId, appName) {
 
         if (data.code === 'OK' && data.body?.downloadUrls?.length) {
             const apkUrl = data.body.downloadUrls[0].url;
-            window.open(apkUrl, '_blank');
+            // Отображаем ссылку в модальном окне
+            container.innerHTML = `
+                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p class="text-sm text-gray-600 mb-2">Нажмите на ссылку, чтобы скачать APK:</p>
+                    <a href="${escapeHtml(apkUrl)}" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       class="block p-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors break-all">
+                        ${escapeHtml(apkUrl)}
+                    </a>
+                    <button onclick="window.open('${escapeHtml(apkUrl)}', '_blank')" 
+                            class="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                        ⬇️ Скачать
+                    </button>
+                </div>
+            `;
         } else {
-            alert('Не удалось получить ссылку для скачивания.');
+            container.innerHTML = `<div class="text-red-600 text-center p-4">❌ Не удалось получить ссылку для скачивания.</div>`;
         }
     } catch (error) {
         console.error('Ошибка скачивания:', error);
-        alert('Ошибка при получении ссылки: ' + error.message);
+        container.innerHTML = `<div class="text-red-600 text-center p-4">❌ Ошибка: ${escapeHtml(error.message)}</div>`;
     }
 }
 

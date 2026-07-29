@@ -74,7 +74,18 @@
         </a>
     </footer>
 
-    <!-- Модальные окна (без downloadModal) -->
+    <!-- Модальное окно для скачивания (упрощённое) -->
+    <div id="downloadModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Скачивание APK">
+        <div class="modal-content">
+            <button type="button" class="modal-close" aria-label="Закрыть">&times;</button>
+            <h2 class="text-2xl font-bold mb-4">📦 Скачивание APK</h2>
+            <div id="downloadResults" class="text-center">
+                <!-- Здесь будет ссылка -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Остальные модальные окна -->
     <div id="versionModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="История версий">
         <div class="modal-content">
             <button type="button" class="modal-close" aria-label="Закрыть">&times;</button>

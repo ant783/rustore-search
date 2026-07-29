@@ -1,15 +1,8 @@
-// ============================================================
-//  RuStore Downloader
-//  Автоматический выбор прокси:
-//    - GitHub Pages → https://rustore-xi.vercel.app/api/
-//    - Vercel / локально → /api/
-// ============================================================
-
 // -------- НАСТРОЙКА ПРОКСИ --------
 function getApiBase() {
     const hostname = window.location.hostname;
     if (hostname.includes('github.io')) {
-        return 'https://rustore-xi.vercel.app/api/';
+        return 'https://rustore-search.vercel.app/api/';
     }
     return '/api/';
 }
@@ -42,7 +35,7 @@ const createRatingStars = rating => {
     ).join('');
 };
 
-// ---- Modal Manager ----
+// ---- Modal Manager (для описания, отзывов, истории версий, превью) ----
 const ModalManager = {
     show(modalId, contentId, content) {
         const modal = document.getElementById(modalId);
@@ -204,6 +197,8 @@ function createAppCard(appData) {
                     ${ratingValue}
                     <span class="text-sm text-gray-600">(${totalRatings || 0})</span>
                 </div>
+                <button class="comments-toggle mt-2 text-blue-600 text-sm" data-package="${escapeHtml(packageName)}">Показать отзывы</button>
+                <button class="version-history-btn mt-1 text-blue-600 text-sm" data-appid="${appId}">История версий</button>
             </div>
         </div>
         <div class="mt-4">
@@ -230,22 +225,20 @@ function createAppCard(appData) {
         const appName = e.currentTarget.getAttribute('data-appname');
         downloadApp(appId, appName);
     });
+    card.querySelector('.comments-toggle')?.addEventListener('click', (e) => {
+        const pkg = e.currentTarget.getAttribute('data-package');
+        showComments(pkg, 0, true);
+    });
+    card.querySelector('.version-history-btn')?.addEventListener('click', (e) => {
+        const appId = parseInt(e.currentTarget.getAttribute('data-appid'));
+        showVersionHistory(appId);
+    });
 
     return card;
 }
 
-// ---- Скачивание APK (с модальным окном и инструкциями) ----
+// ---- Скачивание APK (упрощённое: прямая ссылка) ----
 async function downloadApp(appId, appName) {
-    ModalManager.show('downloadModal', 'downloadResults', '<div class="text-center p-4">Получение ссылки...</div>');
-    const container = document.getElementById('downloadResults');
-    if (!container) return;
-
-    const sanitizeFileName = (name) => {
-        return name.replace(/[\\/*?:"<>|]/g, '_').replace(/\s+/g, '_').trim();
-    };
-    const safeAppName = sanitizeFileName(appName || 'app');
-    const suggestedFileName = `${safeAppName}.apk`;
-
     try {
         const url = 'applicationData/v2/download-link';
         const response = await fetchWithTimeout(url, {
@@ -267,54 +260,14 @@ async function downloadApp(appId, appName) {
         const data = await response.json();
 
         if (data.code === 'OK' && data.body?.downloadUrls?.length) {
-            const urls = data.body.downloadUrls;
-            container.innerHTML = `
-                <div class="space-y-3">
-                    <div class="p-3 bg-yellow-50 rounded border border-yellow-200">
-                        <div class="font-semibold text-yellow-800">⚠️ Сохранение с правильным именем</div>
-                        <div class="text-sm text-yellow-700 mt-1">
-                            Нажмите правой кнопкой по ссылке и выберите «Сохранить ссылку как…»<br>
-                            Имя файла: <strong>${escapeHtml(suggestedFileName)}</strong>
-                        </div>
-                    </div>
-                    <div class="font-semibold">Ссылки для скачивания:</div>
-                    ${urls.map((u, idx) => `
-                        <div class="p-2 bg-gray-50 rounded break-all">
-                            <div class="text-sm text-gray-600 mb-1">Файл ${idx+1}</div>
-                            <a href="${escapeHtml(u.url)}" target="_blank" class="text-blue-600 underline text-sm">${escapeHtml(u.url)}</a>
-                        </div>
-                    `).join('')}
-                    <div class="mt-4 p-3 bg-gray-100 rounded">
-                        <div class="font-semibold">Команды для загрузки:</div>
-                        <div class="mt-2">
-                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                                curl -L -o "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
-                            </div>
-                            <button id="copyCurlCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать curl</button>
-                        </div>
-                        <div class="mt-2">
-                            <div class="text-sm font-mono bg-gray-900 text-gray-100 p-2 rounded overflow-x-auto">
-                                wget -O "${suggestedFileName}" "${escapeHtml(urls[0].url)}"
-                            </div>
-                            <button id="copyWgetCmd" class="mt-1 text-xs bg-blue-500 text-white px-2 py-1 rounded">Копировать wget</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            document.getElementById('copyCurlCmd')?.addEventListener('click', async () => {
-                await navigator.clipboard.writeText(`curl -L -o "${suggestedFileName}" "${urls[0].url}"`);
-                alert('Команда curl скопирована');
-            });
-            document.getElementById('copyWgetCmd')?.addEventListener('click', async () => {
-                await navigator.clipboard.writeText(`wget -O "${suggestedFileName}" "${urls[0].url}"`);
-                alert('Команда wget скопирована');
-            });
+            const apkUrl = data.body.downloadUrls[0].url;
+            window.open(apkUrl, '_blank');
         } else {
-            container.innerHTML = '<div class="text-red-600">Не удалось получить ссылки для скачивания</div>';
+            alert('Не удалось получить ссылку для скачивания.');
         }
     } catch (error) {
-        container.innerHTML = `<div class="text-red-600">Ошибка: ${error.message}</div>`;
+        console.error('Ошибка скачивания:', error);
+        alert('Ошибка при получении ссылки: ' + error.message);
     }
 }
 
@@ -329,12 +282,37 @@ function showDescription(appName, description) {
     modal.classList.add('show');
 }
 
-// ---- Заглушки ----
-function searchByUrl() {
-    const url = document.getElementById('urlInput').value.trim();
-    if (url) window.open(url, '_blank');
+// ---- Отзывы (заглушка) ----
+async function showComments(packageName, pageNumber, firstOpen) {
+    // Просто показываем сообщение, так как API отзывов может быть недоступно
+    alert(`Отзывы для ${packageName} пока недоступны.`);
 }
-function openPreview(imageUrl, event) {}
+
+// ---- История версий (заглушка) ----
+async function showVersionHistory(appId) {
+    alert(`История версий для приложения ${appId} пока недоступна.`);
+}
+
+// ---- Поиск по ссылке ----
+function searchByUrl() {
+    const urlInput = document.getElementById('urlInput');
+    const url = urlInput.value.trim();
+    if (!url) return;
+    // Пытаемся извлечь packageName из URL, если есть
+    const match = url.match(/\/app\/([^\/?#]+)/);
+    if (match && match[1]) {
+        const packageName = match[1];
+        // Можно сделать поиск по packageName, но у нас нет такой функции, поэтому просто открываем страницу приложения
+        window.open(`https://www.rustore.ru/app/${packageName}`, '_blank');
+    } else {
+        alert('Не удалось извлечь идентификатор приложения из ссылки.');
+    }
+}
+
+// ---- Превью изображений (заглушки) ----
+function openPreview(imageUrl, event) {
+    // Заглушка, так как скриншоты не используются в упрощённой версии
+}
 function closeImagePreview() {}
 function navigateImage(dir) {}
 
@@ -366,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     searchUrlBtn?.addEventListener('click', searchByUrl);
 
+    // Закрытие модальных окон
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
             const modal = btn.closest('.modal');
@@ -384,6 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Бесконечная прокрутка
     window.addEventListener('scroll', () => {
         if (state.isLoading || !state.hasMorePages) return;
         if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200) {
